@@ -1,6 +1,6 @@
-"""Computer Agents SDK - Official Python client for the Computer Agents Cloud API.
+"""Computer Agents SDK - Official Python client for the Agentic Compute Platform API.
 
-Execute Claude-powered AI agents in isolated cloud containers.
+Build with threads, computers, agents, resources, databases, and automation.
 
 Example::
 
@@ -11,13 +11,13 @@ Example::
     # Execute a task
     result = client.run(
         "Create a REST API",
-        environment_id="env_xxx",
+        computer_id="env_xxx",
         on_event=lambda e: print(e["type"]),
     )
     print(result.content)
 """
 
-__version__ = "2.2.0"
+__version__ = "2.6.1"
 
 # ============================================================================
 # Main Client
@@ -32,19 +32,27 @@ from ._api_client import ApiClient
 # ============================================================================
 
 from .resources import (
+    AgentRuntimesResource,
     AgentsResource,
+    AuthResource,
     BillingResource,
     BudgetResource,
+    ComputersResource,
+    DatabasesResource,
     EnvironmentsResource,
     FilesResource,
+    FunctionsResource,
     GitResource,
     OrchestrationsResource,
     ProjectsResource,
-    RunsResource,
+    ResourcesResource,
+    RuntimesResource,
     SchedulesResource,
     SendMessageResult,
+    SkillsResource,
     ThreadsResource,
     TriggersResource,
+    WebAppsResource,
 )
 
 # ============================================================================
@@ -64,8 +72,15 @@ from .types import (
 
     # Environments
     Environment,
+    Computer,
     CreateEnvironmentParams,
+    CreateComputerParams,
     UpdateEnvironmentParams,
+    UpdateComputerParams,
+    EnvironmentComputeProfileId,
+    EnvironmentComputeResources,
+    EnvironmentPricingMetadata,
+    EnvironmentMetadata,
     EnvironmentVariable,
     McpServer,
     RuntimeConfig,
@@ -81,6 +96,30 @@ from .types import (
     InstallPackagesResult,
     StartContainerParams,
     StartContainerResult,
+    EnvironmentSnapshot,
+    EnvironmentChangeKind,
+    EnvironmentChangeOperation,
+    EnvironmentChangeSourceKind,
+    EnvironmentChangeFileRecord,
+    EnvironmentChangeEntry,
+    EnvironmentChangeListResponse,
+    SnapshotFileEntry,
+    EnvironmentSnapshotFilesResponse,
+    EnvironmentSnapshotDiffResponse,
+    EnvironmentSnapshotFileResponse,
+    EnvironmentForkFromSnapshotResponse,
+    EnvironmentSnapshot,
+    EnvironmentChangeKind,
+    EnvironmentChangeOperation,
+    EnvironmentChangeSourceKind,
+    EnvironmentChangeFileRecord,
+    EnvironmentChangeEntry,
+    EnvironmentChangeListResponse,
+    SnapshotFileEntry,
+    EnvironmentSnapshotFilesResponse,
+    EnvironmentSnapshotDiffResponse,
+    EnvironmentSnapshotFileResponse,
+    EnvironmentForkFromSnapshotResponse,
 
     # Threads
     Thread,
@@ -120,6 +159,7 @@ from .types import (
     CreateAgentParams,
     UpdateAgentParams,
     AgentBinary,
+    BuiltinAgentModel,
 
     # Budget & Billing
     BudgetStatus,
@@ -182,17 +222,40 @@ __all__ = [
     "ApiClient",
 
     # Resources
+    "AgentRuntimesResource",
     "AgentsResource",
+    "AuthResource",
     "BillingResource",
     "BudgetResource",
+    "ComputersResource",
+    "DatabasesResource",
     "EnvironmentsResource",
+    "Computer",
     "FilesResource",
+    "FunctionsResource",
     "GitResource",
     "OrchestrationsResource",
     "ProjectsResource",
-    "RunsResource",
+    "ResourcesResource",
+    "RuntimesResource",
     "SchedulesResource",
     "SendMessageResult",
+    "SkillsResource",
     "ThreadsResource",
     "TriggersResource",
+    "WebAppsResource",
+
+    # Environment history types
+    "EnvironmentSnapshot",
+    "EnvironmentChangeKind",
+    "EnvironmentChangeOperation",
+    "EnvironmentChangeSourceKind",
+    "EnvironmentChangeFileRecord",
+    "EnvironmentChangeEntry",
+    "EnvironmentChangeListResponse",
+    "SnapshotFileEntry",
+    "EnvironmentSnapshotFilesResponse",
+    "EnvironmentSnapshotDiffResponse",
+    "EnvironmentSnapshotFileResponse",
+    "EnvironmentForkFromSnapshotResponse",
 ]

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from typing import Any, Callable, Dict, List, Optional
+from urllib.parse import quote
 
 from .._api_client import ApiClient
 from ..types import (
@@ -256,6 +257,125 @@ class ThreadsResource:
         """Get execution logs for a thread."""
         resp = self._client.get(f"/threads/{thread_id}/logs")
         return resp["logs"]
+
+    def get_status(self, thread_id: str) -> dict[str, Any]:
+        """Get execution status for a thread."""
+        return self._client.get(f"/threads/{thread_id}/status")
+
+    def list_steps(
+        self,
+        thread_id: str,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[dict[str, Any]]:
+        query: dict[str, Any] = {}
+        if limit is not None:
+            query["limit"] = limit
+        if offset is not None:
+            query["offset"] = offset
+        resp = self._client.get(f"/threads/{thread_id}/steps", query=query or None)
+        return resp["data"]
+
+    def list_step_files(
+        self,
+        thread_id: str,
+        step_id: str,
+        *,
+        prefix: str | None = None,
+    ) -> list[dict[str, Any]]:
+        query = {"prefix": prefix} if prefix is not None else None
+        resp = self._client.get(f"/threads/{thread_id}/steps/{step_id}/files", query=query)
+        return resp["data"]
+
+    def get_step_diff(
+        self,
+        thread_id: str,
+        step_id: str,
+        *,
+        path: str | None = None,
+    ) -> dict[str, Any]:
+        query = {"path": path} if path is not None else None
+        return self._client.get(f"/threads/{thread_id}/steps/{step_id}/diff", query=query)
+
+    def get_step_file(self, thread_id: str, step_id: str, *, path: str) -> dict[str, Any]:
+        return self._client.get(
+            f"/threads/{thread_id}/steps/{step_id}/file",
+            query={"path": path},
+        )
+
+    def download_step_file(self, thread_id: str, step_id: str, *, path: str) -> bytes:
+        encoded_path = quote(path, safe="")
+        resp = self._client.request_raw(
+            "GET",
+            f"/threads/{thread_id}/steps/{step_id}/file/download?path={encoded_path}",
+        )
+        return resp.content
+
+    def fork_from_step(self, thread_id: str, step_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(f"/threads/{thread_id}/steps/{step_id}/fork", params)
+
+    def revert_to_step(self, thread_id: str, step_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(f"/threads/{thread_id}/steps/{step_id}/revert", params)
+
+    def get_file_history(
+        self,
+        thread_id: str,
+        *,
+        path: str,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict[str, Any]:
+        query: dict[str, Any] = {"path": path}
+        if limit is not None:
+            query["limit"] = limit
+        if offset is not None:
+            query["offset"] = offset
+        resp = self._client.get(f"/threads/{thread_id}/files/history", query=query)
+        return {
+            "data": resp["data"],
+            "hasMore": resp.get("has_more", False),
+            "total": resp.get("total_count", 0),
+        }
+
+    def fork_from_message(self, thread_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(f"/threads/{thread_id}/fork-from-message", params)
+
+    def get_context_estimate(self, thread_id: str) -> dict[str, Any]:
+        return self._client.get(f"/threads/{thread_id}/context")
+
+    def get_context_details(self, thread_id: str) -> dict[str, Any]:
+        return self._client.get(f"/threads/{thread_id}/context/details")
+
+    def run_context_action(self, thread_id: str, *, action: str, prompt: str | None = None, title: str | None = None) -> dict[str, Any]:
+        body: dict[str, Any] = {"action": action}
+        if prompt is not None:
+            body["prompt"] = prompt
+        if title is not None:
+            body["title"] = title
+        return self._client.post(f"/threads/{thread_id}/context/actions", body)
+
+    def generate_title(
+        self,
+        thread_id: str,
+        *,
+        message: str,
+        content: str | None = None,
+        task: str | None = None,
+        force: bool | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"message": message}
+        if content is not None:
+            body["content"] = content
+        if task is not None:
+            body["task"] = task
+        if force is not None:
+            body["force"] = force
+        return self._client.post(f"/threads/{thread_id}/generate-title", body)
+
+    def get_diffs(self, thread_id: str) -> list[dict[str, Any]]:
+        resp = self._client.get(f"/threads/{thread_id}/diffs")
+        return resp.get("diffs") or resp.get("data") or []
 
     def list_research(self, thread_id: str) -> list[ResearchSession]:
         """List deep research sessions for a thread."""

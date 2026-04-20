@@ -7,6 +7,7 @@ container lifecycle, runtime/package management, and build management.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from .._api_client import ApiClient
 from ..types import (
@@ -23,14 +24,21 @@ from ..types import (
     StartContainerResult,
     TestBuildResult,
     ValidateDockerfileResult,
+    EnvironmentSnapshot,
+    SnapshotFileEntry,
+    EnvironmentSnapshotDiffResponse,
+    EnvironmentSnapshotFileResponse,
+    EnvironmentForkFromSnapshotResponse,
+    EnvironmentChangeListResponse,
+    EnvironmentChangeOperation,
 )
 
 
 class EnvironmentsResource:
     """Environment management.
 
-    Create and manage isolated execution environments.
-    Environments define variables, secrets, MCP servers, and setup scripts.
+    Create and manage ACP computers.
+    The raw API still uses the term ``environment`` in route names.
 
     Example::
 
@@ -51,6 +59,7 @@ class EnvironmentsResource:
         self,
         name: str,
         *,
+        project_id: str | None = None,
         description: str | None = None,
         runtimes: dict[str, str] | None = None,
         packages: dict[str, list[str]] | None = None,
@@ -62,9 +71,19 @@ class EnvironmentsResource:
         documentation: list[str] | None = None,
         internet_access: bool | None = None,
         is_default: bool | None = None,
+        compute_profile: str | None = None,
+        gui_enabled: bool | None = None,
+        office_apps_enabled: bool | None = None,
+        metadata: dict[str, Any] | None = None,
     ) -> Environment:
-        """Create a new environment."""
+        """Create a new environment.
+
+        Use ``compute_profile`` for ACP computer sizing presets:
+        ``lite``, ``standard``, ``power``, or ``desktop``.
+        """
         body: dict[str, Any] = {"name": name}
+        if project_id is not None:
+            body["projectId"] = project_id
         if description is not None:
             body["description"] = description
         if runtimes is not None:
@@ -87,6 +106,14 @@ class EnvironmentsResource:
             body["internetAccess"] = internet_access
         if is_default is not None:
             body["isDefault"] = is_default
+        if compute_profile is not None:
+            body["computeProfile"] = compute_profile
+        if gui_enabled is not None:
+            body["guiEnabled"] = gui_enabled
+        if office_apps_enabled is not None:
+            body["officeAppsEnabled"] = office_apps_enabled
+        if metadata is not None:
+            body["metadata"] = metadata
         resp = self._client.post("/environments", body)
         return resp["environment"]
 
@@ -120,15 +147,22 @@ class EnvironmentsResource:
         """Get the user's default environment. Creates one if it doesn't exist."""
         return self._client.get("/environments/default")
 
+    def set_default(self, environment_id: str) -> Environment:
+        """Mark an environment as the default computer for the current user."""
+        resp = self._client.post(f"/environments/{environment_id}/set-default", {})
+        return resp["environment"]
+
     def update(self, environment_id: str, **params: Any) -> Environment:
         """Update an environment.
 
         Accepts keyword arguments matching :class:`UpdateEnvironmentParams` fields
         in snake_case (e.g. ``internet_access=True``).
+        Use ``compute_profile="power"`` to resize a computer through ACP presets.
         """
         body: dict[str, Any] = {}
         key_map = {
             "name": "name",
+            "project_id": "projectId",
             "description": "description",
             "runtimes": "runtimes",
             "packages": "packages",
@@ -139,6 +173,10 @@ class EnvironmentsResource:
             "mcp_servers": "mcpServers",
             "internet_access": "internetAccess",
             "is_default": "isDefault",
+            "compute_profile": "computeProfile",
+            "gui_enabled": "guiEnabled",
+            "office_apps_enabled": "officeAppsEnabled",
+            "metadata": "metadata",
         }
         for py_key, api_key in key_map.items():
             if py_key in params:
@@ -317,6 +355,158 @@ class EnvironmentsResource:
     def get_status(self, environment_id: str) -> ContainerStatus:
         """Get container status."""
         return self._client.get(f"/environments/{environment_id}/status")
+
+    def get_analytics(self, environment_id: str) -> dict[str, Any]:
+        """Get runtime analytics for a computer."""
+        return self._client.get(f"/environments/{environment_id}/analytics")
+
+    def capture_screenshot(self, environment_id: str) -> bytes:
+        """Capture a PNG screenshot from the computer desktop."""
+        resp = self._client.request_raw("GET", f"/environments/{environment_id}/gui/screenshot")
+        return resp.content
+
+    def create_gui_session(self, environment_id: str) -> dict[str, Any]:
+        """Create a GUI session token for desktop streaming."""
+        return self._client.post(f"/environments/{environment_id}/gui/session", {})
+
+    def perform_gui_action(self, environment_id: str, **params: Any) -> dict[str, Any]:
+        """Perform a GUI action on the computer desktop."""
+        return self._client.post(f"/environments/{environment_id}/gui/action", params)
+
+    def list_secrets(self, environment_id: str) -> list[dict[str, Any]]:
+        """List secret keys configured on a computer."""
+        resp = self._client.get(f"/environments/{environment_id}/secrets")
+        return resp["data"]
+
+    def create_secret(self, environment_id: str, *, key: str, value: str) -> dict[str, Any]:
+        return self._client.post(f"/environments/{environment_id}/secrets", {"key": key, "value": value})
+
+    def update_secret(self, environment_id: str, key: str, *, value: str) -> dict[str, Any]:
+        return self._client.put(f"/environments/{environment_id}/secrets/{quote(key, safe='')}", {"value": value})
+
+    def delete_secret(self, environment_id: str, key: str) -> dict[str, Any]:
+        return self._client.delete(f"/environments/{environment_id}/secrets/{quote(key, safe='')}")
+
+    def initialize_snapshots(self, environment_id: str) -> dict[str, Any]:
+        """Initialize checkpoint history for a computer."""
+        return self._client.post(f"/environments/{environment_id}/snapshots/initialize", {})
+
+    def list_snapshots(self, environment_id: str) -> list[EnvironmentSnapshot]:
+        """List computer checkpoints/snapshots."""
+        resp = self._client.get(f"/environments/{environment_id}/snapshots")
+        return resp["data"]
+
+    def list_changes(
+        self,
+        environment_id: str,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+        project_id: str | None = None,
+        agent_id: str | None = None,
+        operation: EnvironmentChangeOperation | list[EnvironmentChangeOperation] | None = None,
+    ) -> EnvironmentChangeListResponse:
+        """List file-level change history for a computer."""
+        query: dict[str, Any] = {}
+        if limit is not None:
+            query["limit"] = limit
+        if offset is not None:
+            query["offset"] = offset
+        if project_id is not None:
+            query["projectId"] = project_id
+        if agent_id is not None:
+            query["agentId"] = agent_id
+        if operation is not None:
+            query["operation"] = ",".join(operation) if isinstance(operation, list) else operation
+        return self._client.get(f"/environments/{environment_id}/changes", query=query or None)
+
+    def list_snapshot_files(
+        self,
+        environment_id: str,
+        snapshot_id: str,
+        *,
+        prefix: str | None = None,
+    ) -> list[SnapshotFileEntry]:
+        query = {"prefix": prefix} if prefix is not None else None
+        resp = self._client.get(
+            f"/environments/{environment_id}/snapshots/{snapshot_id}/files",
+            query=query,
+        )
+        return resp["data"]
+
+    def get_snapshot_diff(
+        self,
+        environment_id: str,
+        snapshot_id: str,
+        *,
+        path: str | None = None,
+    ) -> EnvironmentSnapshotDiffResponse:
+        query = {"path": path} if path is not None else None
+        return self._client.get(
+            f"/environments/{environment_id}/snapshots/{snapshot_id}/diff",
+            query=query,
+        )
+
+    def get_snapshot_file(self, environment_id: str, snapshot_id: str, *, path: str) -> EnvironmentSnapshotFileResponse:
+        return self._client.get(
+            f"/environments/{environment_id}/snapshots/{snapshot_id}/file",
+            query={"path": path},
+        )
+
+    def get_change_diff(
+        self,
+        environment_id: str,
+        change_id: str,
+        *,
+        path: str | None = None,
+    ) -> EnvironmentSnapshotDiffResponse:
+        query = {"path": path} if path is not None else None
+        return self._client.get(
+            f"/environments/{environment_id}/changes/{quote(change_id, safe='')}/diff",
+            query=query,
+        )
+
+    def get_change_file(self, environment_id: str, change_id: str, *, path: str) -> EnvironmentSnapshotFileResponse:
+        return self._client.get(
+            f"/environments/{environment_id}/changes/{quote(change_id, safe='')}/file",
+            query={"path": path},
+        )
+
+    def fork_from_snapshot(
+        self,
+        environment_id: str,
+        snapshot_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> EnvironmentForkFromSnapshotResponse:
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if description is not None:
+            body["description"] = description
+        return self._client.post(
+            f"/environments/{environment_id}/snapshots/{snapshot_id}/fork",
+            body,
+        )
+
+    def fork_from_change(
+        self,
+        environment_id: str,
+        change_id: str,
+        *,
+        name: str | None = None,
+        description: str | None = None,
+    ) -> EnvironmentForkFromSnapshotResponse:
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if description is not None:
+            body["description"] = description
+        return self._client.post(
+            f"/environments/{environment_id}/changes/{quote(change_id, safe='')}/fork",
+            body,
+        )
 
     # =========================================================================
     # Configuration Management

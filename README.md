@@ -4,7 +4,7 @@
 [![Python versions](https://img.shields.io/pypi/pyversions/computer-agents.svg)](https://pypi.org/project/computer-agents/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
-The official Python SDK for the [Computer Agents](https://computer-agents.com) Cloud API. Execute Claude-powered AI agents in isolated cloud containers.
+The official Python SDK for the [Computer Agents](https://computer-agents.com) Cloud API. Build against the Agentic Compute Platform with threads, computers, resources, databases, skills, and agents.
 
 ## Installation
 
@@ -22,7 +22,7 @@ client = ComputerAgentsClient(api_key="ca_your_api_key")
 # Execute a task
 result = client.run(
     "Create a REST API with Flask",
-    environment_id="env_xxx",
+    computer_id="env_xxx",
     on_event=lambda e: print(e["type"]),
 )
 
@@ -50,28 +50,60 @@ result2 = client.threads.send_message(
 )
 ```
 
-## Environments
+## Computers
 
 ```python
-# Create a custom environment
-env = client.environments.create(
+# Create a custom computer
+computer = client.computers.create(
     name="data-science",
     internet_access=True,
     runtimes={"python": "3.12"},
 )
 
 # Install packages
-client.environments.install_packages(env["id"], "python", ["pandas", "numpy"])
+client.computers.install_packages(computer["id"], "python", ["pandas", "numpy"])
 
 # Add MCP servers
-client.environments.update(
-    env["id"],
+client.computers.update(
+    computer["id"],
     mcp_servers=[{
         "type": "stdio",
         "name": "filesystem",
         "command": "npx",
         "args": ["@modelcontextprotocol/server-filesystem", "/workspace"],
     }],
+)
+```
+
+## Computer Change History
+
+```python
+history = client.computers.list_changes(
+    computer["id"],
+    limit=25,
+    project_id="proj_123",
+    operation=["created", "modified"],
+)
+
+latest = history["data"][0]
+latest_file = latest["files"][0]
+
+diff = client.computers.get_change_diff(
+    computer["id"],
+    latest["id"],
+    path=latest_file["path"],
+)
+
+file_state = client.computers.get_change_file(
+    computer["id"],
+    latest["id"],
+    path=latest_file["path"],
+)
+
+fork = client.computers.fork_from_change(
+    computer["id"],
+    latest["id"],
+    name="history-branch",
 )
 ```
 
@@ -88,7 +120,7 @@ agent = client.agents.create(
 
 # Use the agent
 thread = client.threads.create(
-    environment_id="env_xxx",
+    computer_id="env_xxx",
     agent_id=agent["id"],
 )
 ```
@@ -132,6 +164,39 @@ schedule = client.schedules.create(
 )
 ```
 
+## Resources
+
+```python
+resource = client.resources.create(
+    name="crm-web",
+    kind="web_app",
+    auth_mode="public",
+)
+
+client.resources.deploy(resource["id"])
+analytics = client.resources.get_analytics(resource["id"])
+```
+
+## Databases
+
+```python
+database = client.databases.create(name="crm-data")
+
+client.databases.create_collection(database["id"], name="leads")
+client.databases.create_document(
+    database["id"],
+    "leads",
+    data={"company": "Acme", "stage": "new"},
+)
+```
+
+## Skills
+
+```python
+skills = client.skills.list()
+print([skill["name"] for skill in skills])
+```
+
 ## Configuration
 
 The API key can be provided via:
@@ -153,7 +218,7 @@ client = ComputerAgentsClient(
 
 ```python
 with ComputerAgentsClient(api_key="ca_...") as client:
-    result = client.run("Hello world", environment_id="env_xxx")
+    result = client.run("Hello world", computer_id="env_xxx")
     print(result.content)
 # Client is automatically closed
 ```
@@ -163,15 +228,18 @@ with ComputerAgentsClient(api_key="ca_...") as client:
 | Resource | Description |
 |----------|-------------|
 | `client.threads` | Conversation management with SSE streaming |
-| `client.environments` | Environment configuration and container lifecycle |
+| `client.environments` / `client.computers` | Computer configuration and lifecycle |
 | `client.agents` | Agent configuration (model, instructions, skills) |
-| `client.files` | File management in environment workspaces |
+| `client.resources` | Web apps, functions, auth modules, and runtimes |
+| `client.databases` | Managed database surfaces |
+| `client.skills` | Custom ACP skills |
+| `client.files` | File management in computer workspaces |
 | `client.schedules` | Scheduled task management |
 | `client.triggers` | Event-driven triggers |
 | `client.orchestrations` | Agent-to-agent orchestration |
 | `client.budget` | Budget and usage tracking |
 | `client.billing` | Billing records and statistics |
-| `client.git` | Git operations on workspaces |
+| `client.git` | Git operations on computer workspaces |
 
 ## Requirements
 

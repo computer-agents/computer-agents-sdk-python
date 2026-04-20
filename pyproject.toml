@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "computer-agents"
-version = "2.3.0"
-description = "Official Python SDK for the Computer Agents Cloud API. Execute Claude-powered AI agents in isolated cloud containers."
+version = "2.6.1"
+description = "Official Python SDK for the Computer Agents Agentic Compute Platform API. Build with threads, computers, agents, resources, and databases."
 readme = "README.md"
 license = "MIT"
 requires-python = ">=3.9"
@@ -16,8 +16,7 @@ keywords = [
     "computer-agents",
     "ai",
     "agents",
-    "claude",
-    "anthropic",
+    "agentic-compute-platform",
     "cloud",
     "api",
     "sdk",

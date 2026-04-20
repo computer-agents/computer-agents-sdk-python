@@ -8,6 +8,7 @@ client = ComputerAgentsClient()
 env = client.environments.create(
     name="data-science",
     description="Environment for data analysis",
+    compute_profile="standard",
     internet_access=True,
     runtimes={"python": "3.12", "nodejs": "20"},
 )
@@ -26,6 +27,7 @@ print(f"Available Python versions: {runtimes['python']}")
 # Add MCP servers
 env = client.environments.update(
     env["id"],
+    compute_profile="power",
     mcp_servers=[
         {
             "type": "stdio",

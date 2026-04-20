@@ -31,17 +31,23 @@ from typing import Any, Callable
 
 from ._api_client import ApiClient
 from .resources import (
+    AgentRuntimesResource,
     AgentsResource,
+    AuthResource,
     BillingResource,
     BudgetResource,
+    DatabasesResource,
     EnvironmentsResource,
     FilesResource,
+    FunctionsResource,
     GitResource,
     OrchestrationsResource,
     ProjectsResource,
-    RunsResource,
+    ResourcesResource,
+    WebAppsResource,
     SchedulesResource,
     SendMessageResult,
+    SkillsResource,
     ThreadsResource,
     TriggersResource,
 )
@@ -69,15 +75,19 @@ class ComputerAgentsClient:
     resources through typed methods:
 
     - ``threads`` -- Conversation management with SSE streaming
-    - ``environments`` -- Environment configuration and container lifecycle
+    - ``environments`` / ``computers`` -- Computer configuration and lifecycle
+    - ``resources`` -- Web apps, functions, auth modules, and runtimes
+    - ``web_apps`` / ``functions`` / ``auth`` / ``runtimes`` -- Product-shaped resource managers
+    - ``databases`` -- Managed database surfaces
+    - ``skills`` -- Custom ACP skills
     - ``agents`` -- Agent configuration
-    - ``files`` -- File management in environment workspaces
+    - ``files`` -- File management in computer workspaces
     - ``schedules`` -- Scheduled task management
     - ``triggers`` -- Event-driven triggers
     - ``orchestrations`` -- Agent-to-agent orchestration
     - ``budget`` -- Budget and usage tracking
     - ``billing`` -- Billing records and statistics
-    - ``git`` -- Git operations on workspaces
+    - ``git`` -- Git operations on computers (compatibility helper)
 
     For simple use cases, use the :meth:`run` method which handles thread
     creation and streaming automatically.
@@ -122,7 +132,16 @@ class ComputerAgentsClient:
         # Initialize all resource managers
         self.threads = ThreadsResource(self.api)
         self.environments = EnvironmentsResource(self.api)
+        self.computers = self.environments
         self.agents = AgentsResource(self.api)
+        self.resources = ResourcesResource(self.api)
+        self.web_apps = WebAppsResource(self.api)
+        self.functions = FunctionsResource(self.api)
+        self.auth = AuthResource(self.api)
+        self.runtimes = AgentRuntimesResource(self.api)
+        self.agent_runtimes = self.runtimes
+        self.databases = DatabasesResource(self.api)
+        self.skills = SkillsResource(self.api)
         self.files = FilesResource(self.api)
         self.schedules = SchedulesResource(self.api)
         self.triggers = TriggersResource(self.api)
@@ -130,7 +149,6 @@ class ComputerAgentsClient:
         self.budget = BudgetResource(self.api)
         self.billing = BillingResource(self.api)
         self.git = GitResource(self.api)
-        self.runs = RunsResource(self.api)
         self.projects = ProjectsResource(self.api)
 
         # Cached default environment (populated on first run without environment_id)
@@ -155,6 +173,7 @@ class ComputerAgentsClient:
         task: str,
         environment_id: str | None = None,
         *,
+        computer_id: str | None = None,
         thread_id: str | None = None,
         agent_config: dict[str, Any] | None = None,
         on_event: Callable[[dict[str, Any]], None] | None = None,
@@ -201,7 +220,8 @@ class ComputerAgentsClient:
             # Explicit environment
             result = client.run("Deploy to prod", environment_id="env_xxx")
         """
-        # Auto-resolve environment if not provided
+        # Auto-resolve environment/computer if not provided
+        environment_id = computer_id or environment_id
         if environment_id is None:
             environment_id = self._ensure_default_environment()
 
@@ -248,6 +268,7 @@ class ComputerAgentsClient:
         *,
         internet_access: bool = True,
         environment_name: str | None = None,
+        computer_name: str | None = None,
     ) -> dict[str, Any]:
         """Quick setup with default environment.
 
@@ -259,7 +280,7 @@ class ComputerAgentsClient:
             a default environment when ``environment_id`` is omitted.
 
         Returns:
-            Dict with ``project`` and ``environment`` keys.
+            Dict with ``project``, ``environment``, and ``computer`` keys.
 
         Example::
 
@@ -273,12 +294,12 @@ class ComputerAgentsClient:
 
         if default_env is None:
             default_env = self.environments.create(
-                name=environment_name or "default",
+                name=computer_name or environment_name or "default",
                 internet_access=internet_access,
                 is_default=True,
             )
 
-        return {"project": project, "environment": default_env}
+        return {"project": project, "environment": default_env, "computer": default_env}
 
     # =========================================================================
     # Health & Monitoring

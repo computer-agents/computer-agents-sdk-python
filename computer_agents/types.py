@@ -90,6 +90,7 @@ class ProjectStats(TypedDict, total=False):
 
 EnvironmentStatus = Literal["stopped", "building", "running", "error"]
 BuildStatus = Literal["pending", "building", "ready", "failed"]
+EnvironmentComputeProfileId = Literal["lite", "standard", "power", "desktop"]
 
 
 class EnvironmentVariable(TypedDict):
@@ -134,6 +135,23 @@ class AvailableRuntimes(TypedDict):
     rust: List[str]
 
 
+class EnvironmentComputeResources(TypedDict, total=False):
+    cpuCores: float
+    memoryMb: int
+
+
+class EnvironmentPricingMetadata(TypedDict, total=False):
+    minutePrice: float
+
+
+class EnvironmentMetadata(TypedDict, total=False):
+    computeProfile: EnvironmentComputeProfileId
+    computeResources: EnvironmentComputeResources
+    pricing: EnvironmentPricingMetadata
+    guiEnabled: bool
+    officeAppsEnabled: bool
+
+
 class Environment(TypedDict, total=False):
     id: str
     userId: str
@@ -156,6 +174,7 @@ class Environment(TypedDict, total=False):
     buildLogs: str
     lastBuildAt: str
     imageTag: str
+    metadata: EnvironmentMetadata
     isDefault: bool
     isActive: bool
     createdAt: str
@@ -164,7 +183,11 @@ class Environment(TypedDict, total=False):
     projectId: str  # deprecated
 
 
+Computer = Environment
+
+
 class CreateEnvironmentParams(TypedDict, total=False):
+    projectId: Optional[str]
     name: str  # required in practice
     description: str
     runtimes: RuntimeConfig
@@ -177,9 +200,14 @@ class CreateEnvironmentParams(TypedDict, total=False):
     documentation: List[str]
     internetAccess: bool
     isDefault: bool
+    computeProfile: EnvironmentComputeProfileId
+    guiEnabled: bool
+    officeAppsEnabled: bool
+    metadata: EnvironmentMetadata
 
 
 class UpdateEnvironmentParams(TypedDict, total=False):
+    projectId: Optional[str]
     name: str
     description: str
     runtimes: RuntimeConfig
@@ -191,6 +219,14 @@ class UpdateEnvironmentParams(TypedDict, total=False):
     mcpServers: List[McpServer]
     internetAccess: bool
     isDefault: bool
+    computeProfile: EnvironmentComputeProfileId
+    guiEnabled: bool
+    officeAppsEnabled: bool
+    metadata: EnvironmentMetadata
+
+
+CreateComputerParams = CreateEnvironmentParams
+UpdateComputerParams = UpdateEnvironmentParams
 
 
 class ContainerStatus(TypedDict, total=False):
@@ -198,6 +234,11 @@ class ContainerStatus(TypedDict, total=False):
     uptime: int
     memory: Dict[str, int]
     cpu: Dict[str, float]
+    containerId: str
+    startedAt: str
+    lastUsedAt: str
+    executionCount: int
+    message: str
 
 
 class BuildResult(TypedDict, total=False):
@@ -263,6 +304,108 @@ class StartContainerResult(TypedDict):
     containerId: str
     imageTag: str
     workspacePath: str
+
+
+EnvironmentChangeKind = Literal["created", "modified", "deleted"]
+EnvironmentChangeOperation = Literal["created", "uploaded", "modified", "deleted"]
+EnvironmentChangeSourceKind = Literal["thread", "manual"]
+
+
+class EnvironmentSnapshot(TypedDict, total=False):
+    id: str
+    environmentId: str
+    sourceThreadId: Optional[str]
+    sourceStepId: Optional[str]
+    parentSnapshotId: Optional[str]
+    ledgerCommitSha: str
+    changedPaths: List[str]
+    additions: int
+    deletions: int
+    metadata: Dict[str, Any]
+    createdAt: str
+
+
+class EnvironmentChangeFileRecord(TypedDict, total=False):
+    path: str
+    name: str
+    changeKind: EnvironmentChangeKind
+    operation: EnvironmentChangeOperation
+    entryType: Literal["file", "directory"]
+    previousPath: Optional[str]
+    additions: int
+    deletions: int
+    diff: Optional[str]
+    fileContent: Optional[str]
+
+
+class EnvironmentChangeEntry(TypedDict, total=False):
+    id: str
+    snapshotId: str
+    environmentId: str
+    createdAt: str
+    title: str
+    routeSource: Optional[str]
+    sourceKind: EnvironmentChangeSourceKind
+    sourceThreadId: Optional[str]
+    sourceStepId: Optional[str]
+    threadTitle: Optional[str]
+    stepTitle: Optional[str]
+    projectId: Optional[str]
+    projectName: Optional[str]
+    agentId: Optional[str]
+    agentName: Optional[str]
+    additions: int
+    deletions: int
+    files: List[EnvironmentChangeFileRecord]
+
+
+class EnvironmentChangeListResponse(TypedDict):
+    object: Literal["list"]
+    limit: int
+    offset: int
+    total: int
+    hasMore: bool
+    data: List[EnvironmentChangeEntry]
+
+
+class SnapshotFileEntry(TypedDict, total=False):
+    path: str
+    name: str
+    type: Literal["file", "directory"]
+    size: Optional[int]
+
+
+class EnvironmentSnapshotFilesResponse(TypedDict, total=False):
+    object: Literal["list"]
+    environmentId: str
+    snapshotId: str
+    prefix: Optional[str]
+    data: List[SnapshotFileEntry]
+
+
+class EnvironmentSnapshotDiffResponse(TypedDict, total=False):
+    environmentId: str
+    snapshotId: str
+    parentSnapshotId: Optional[str]
+    fromCommitSha: Optional[str]
+    toCommitSha: str
+    path: Optional[str]
+    diff: str
+    changedPaths: List[str]
+    additions: int
+    deletions: int
+
+
+class EnvironmentSnapshotFileResponse(TypedDict, total=False):
+    path: str
+    snapshotId: Optional[str]
+    content: str
+
+
+class EnvironmentForkFromSnapshotResponse(TypedDict, total=False):
+    environment: Environment
+    snapshot: Optional[EnvironmentSnapshot]
+    sourceSnapshotId: str
 
 
 # ============================================================================
@@ -364,9 +507,17 @@ class ResearchSession(TypedDict, total=False):
 # Agent Config & Send Message
 # ============================================================================
 
-AgentModel = Literal["claude-opus-4-6", "claude-sonnet-4-5", "claude-haiku-4-5"]
+BuiltinAgentModel = Literal[
+    "claude-opus-4-7",
+    "claude-opus-4-6",
+    "claude-sonnet-4-5",
+    "claude-haiku-4-5",
+    "gemini-3-flash",
+    "gemini-3-1-pro",
+]
+AgentModel = str
 ReasoningEffort = Literal["minimal", "low", "medium", "high"]
-DeepResearchModel = Literal["gemini-3-flash-preview", "gemini-3-pro-preview"]
+DeepResearchModel = str
 
 
 class AgentConfig(TypedDict, total=False):
@@ -778,11 +929,12 @@ class UpdateScheduleParams(TypedDict, total=False):
 # Trigger Types
 # ============================================================================
 
-TriggerSource = Literal["github", "slack", "email", "webhook", "cron", "custom"]
+TriggerSource = Literal["github", "gitlab", "slack", "email", "webhook", "cron", "custom"]
 
 
 class TriggerAction(TypedDict, total=False):
-    type: Literal["send_message"]
+    type: Literal["send_message", "comment_pull_request", "comment_merge_request"]
+    prompt: str
     message: str
     template: str
 

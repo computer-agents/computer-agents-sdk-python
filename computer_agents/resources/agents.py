@@ -15,8 +15,8 @@ from ..types import CloudAgent
 class AgentsResource:
     """Agent configuration.
 
-    Create and manage agent configurations with Claude models,
-    instructions, and skills.
+    Create and manage agent configurations, instructions, skills,
+    and workspace model selection.
 
     Example::
 
@@ -64,6 +64,10 @@ class AgentsResource:
         resp = self._client.get("/agents")
         return resp["data"]
 
+    def list_models(self) -> dict[str, Any]:
+        """List built-in and external model entries available to this workspace."""
+        return self._client.get("/agents/models")
+
     def get(self, agent_id: str) -> CloudAgent:
         """Get an agent by ID."""
         resp = self._client.get(f"/agents/{agent_id}")
@@ -97,6 +101,10 @@ class AgentsResource:
                 body[api_key] = params[py_key]
         resp = self._client.patch(f"/agents/{agent_id}", body)
         return resp["agent"]
+
+    def get_analytics(self, agent_id: str) -> dict[str, Any]:
+        """Summarize recent activity for an agent or team."""
+        return self._client.get(f"/agents/{agent_id}/analytics")
 
     def delete(self, agent_id: str, *, hard: bool = False) -> None:
         """Delete an agent."""
