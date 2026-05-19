@@ -42,6 +42,22 @@ class _KindScopedResource:
     def deploy(self, server_id: str) -> dict[str, Any]:
         return self._resources.deploy(server_id)
 
+    def list_deployments(self, server_id: str) -> list[dict[str, Any]]:
+        return self._resources.list_deployments(server_id)
+
+    def rollback_deployment(
+        self,
+        server_id: str,
+        *,
+        deployment_id: str | None = None,
+        revision: str | None = None,
+    ) -> dict[str, Any]:
+        return self._resources.rollback_deployment(
+            server_id,
+            deployment_id=deployment_id,
+            revision=revision,
+        )
+
     def invoke(self, server_id: str, **params: Any) -> dict[str, Any]:
         return self._resources.invoke(server_id, **params)
 
@@ -127,6 +143,51 @@ class _KindScopedResource:
     def delete_file(self, server_id: str, file_path: str) -> dict[str, Any]:
         return self._resources.delete_file(server_id, file_path)
 
+    def list_secrets(self, server_id: str) -> list[dict[str, Any]]:
+        return self._resources.list_secrets(server_id)
+
+    def get_secret(self, server_id: str, secret_id: str) -> dict[str, Any]:
+        return self._resources.get_secret(server_id, secret_id)
+
+    def create_secret(
+        self,
+        server_id: str,
+        *,
+        name: str,
+        value: str,
+        description: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._resources.create_secret(
+            server_id,
+            name=name,
+            value=value,
+            description=description,
+            metadata=metadata,
+        )
+
+    def update_secret(
+        self,
+        server_id: str,
+        secret_id: str,
+        *,
+        name: str | None = None,
+        value: str | None = None,
+        description: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        return self._resources.update_secret(
+            server_id,
+            secret_id,
+            name=name,
+            value=value,
+            description=description,
+            metadata=metadata,
+        )
+
+    def delete_secret(self, server_id: str, secret_id: str) -> bool:
+        return self._resources.delete_secret(server_id, secret_id)
+
 
 class WebAppsResource(_KindScopedResource):
     def __init__(self, client: ApiClient) -> None:
@@ -191,6 +252,11 @@ class AuthResource(_KindScopedResource):
 class AgentRuntimesResource(_KindScopedResource):
     def __init__(self, client: ApiClient) -> None:
         super().__init__(client, "agent_runtime")
+
+
+class SecretsResource(_KindScopedResource):
+    def __init__(self, client: ApiClient) -> None:
+        super().__init__(client, "secrets")
 
 
 RuntimesResource = AgentRuntimesResource

@@ -51,6 +51,24 @@ class ResourcesResource:
     def deploy(self, server_id: str) -> dict[str, Any]:
         return self._client.post(f"/servers/{server_id}/deploy", {})
 
+    def list_deployments(self, server_id: str) -> list[dict[str, Any]]:
+        resp = self._client.get(f"/servers/{server_id}/deployments")
+        return resp.get("deployments") or resp.get("data") or []
+
+    def rollback_deployment(
+        self,
+        server_id: str,
+        *,
+        deployment_id: str | None = None,
+        revision: str | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if deployment_id is not None:
+            body["deploymentId"] = deployment_id
+        if revision is not None:
+            body["revision"] = revision
+        return self._client.post(f"/servers/{server_id}/rollback", body)
+
     def invoke(self, server_id: str, **params: Any) -> dict[str, Any]:
         return self._client.post(f"/servers/{server_id}/invoke", params)
 
@@ -215,3 +233,54 @@ class ResourcesResource:
         normalized = file_path.lstrip("/")
         encoded = "/".join(quote(part, safe="") for part in normalized.split("/"))
         return self._client.delete(f"/servers/{server_id}/files/{encoded}")
+
+    def list_secrets(self, server_id: str) -> list[dict[str, Any]]:
+        resp = self._client.get(f"/servers/{server_id}/secrets")
+        return resp.get("secrets") or resp.get("data") or []
+
+    def get_secret(self, server_id: str, secret_id: str) -> dict[str, Any]:
+        resp = self._client.get(f"/servers/{server_id}/secrets/{secret_id}")
+        return resp["secret"]
+
+    def create_secret(
+        self,
+        server_id: str,
+        *,
+        name: str,
+        value: str,
+        description: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {"name": name, "value": value}
+        if description is not None:
+            body["description"] = description
+        if metadata is not None:
+            body["metadata"] = metadata
+        resp = self._client.post(f"/servers/{server_id}/secrets", body)
+        return resp["secret"]
+
+    def update_secret(
+        self,
+        server_id: str,
+        secret_id: str,
+        *,
+        name: str | None = None,
+        value: str | None = None,
+        description: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        body: dict[str, Any] = {}
+        if name is not None:
+            body["name"] = name
+        if value is not None:
+            body["value"] = value
+        if description is not None:
+            body["description"] = description
+        if metadata is not None:
+            body["metadata"] = metadata
+        resp = self._client.put(f"/servers/{server_id}/secrets/{secret_id}", body)
+        return resp["secret"]
+
+    def delete_secret(self, server_id: str, secret_id: str) -> bool:
+        resp = self._client.delete(f"/servers/{server_id}/secrets/{secret_id}")
+        return bool(resp.get("deleted"))

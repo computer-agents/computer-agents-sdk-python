@@ -6,18 +6,21 @@ from .databases import DatabasesResource
 from .environments import EnvironmentsResource
 from .files import FilesResource
 from .git import GitResource
+from .notifications import NotificationsResource
 from .orchestrations import OrchestrationsResource
 from .product_resources import (
     AgentRuntimesResource,
     AuthResource,
     FunctionsResource,
     RuntimesResource,
+    SecretsResource,
     WebAppsResource,
 )
 from .projects import ProjectsResource
 from .resources import ResourcesResource
 from .schedules import SchedulesResource
 from .skills import SkillsResource
+from .tasks import TasksResource
 from .threads import SendMessageResult, ThreadsResource
 from .triggers import TriggersResource
 
@@ -35,13 +38,16 @@ __all__ = [
     "FilesResource",
     "FunctionsResource",
     "GitResource",
+    "NotificationsResource",
     "OrchestrationsResource",
     "ProjectsResource",
     "ResourcesResource",
     "RuntimesResource",
     "SchedulesResource",
     "SendMessageResult",
+    "SecretsResource",
     "SkillsResource",
+    "TasksResource",
     "ThreadsResource",
     "TriggersResource",
     "WebAppsResource",

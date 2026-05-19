@@ -5,6 +5,27 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.3] - 2026-05-19
+
+### Changed
+
+- Refreshed the package README and project metadata to better explain Computer Agents, persistent computers, projects, deployable resources, secrets, and common SDK workflows.
+
+## [2.6.2] - 2026-05-19
+
+### Added
+
+- Added Python SDK parity for server resource deployments:
+  - `list_deployments`
+  - `rollback_deployment`
+- Added Python SDK parity for server resource secrets:
+  - `list_secrets`
+  - `get_secret`
+  - `create_secret`
+  - `update_secret`
+  - `delete_secret`
+- Added the `SecretsResource` product-shaped manager as `client.secrets`.
+
 ## [2.6.1] - 2026-04-20
 
 ### Added

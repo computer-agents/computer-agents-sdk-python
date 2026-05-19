@@ -41,15 +41,18 @@ from .resources import (
     FilesResource,
     FunctionsResource,
     GitResource,
+    NotificationsResource,
     OrchestrationsResource,
     ProjectsResource,
     ResourcesResource,
-    WebAppsResource,
     SchedulesResource,
     SendMessageResult,
+    SecretsResource,
     SkillsResource,
+    TasksResource,
     ThreadsResource,
     TriggersResource,
+    WebAppsResource,
 )
 from .types import Environment, HealthCheck, Metrics, Project
 
@@ -75,9 +78,10 @@ class ComputerAgentsClient:
     resources through typed methods:
 
     - ``threads`` -- Conversation management with SSE streaming
+    - ``tasks`` -- Planning tasks, comments, releases, sprints, and task threads
     - ``environments`` / ``computers`` -- Computer configuration and lifecycle
-    - ``resources`` -- Web apps, functions, auth modules, and runtimes
-    - ``web_apps`` / ``functions`` / ``auth`` / ``runtimes`` -- Product-shaped resource managers
+    - ``resources`` -- Web apps, functions, auth modules, runtimes, and secrets
+    - ``web_apps`` / ``functions`` / ``auth`` / ``runtimes`` / ``secrets`` -- Product-shaped resource managers
     - ``databases`` -- Managed database surfaces
     - ``skills`` -- Custom ACP skills
     - ``agents`` -- Agent configuration
@@ -88,6 +92,7 @@ class ComputerAgentsClient:
     - ``budget`` -- Budget and usage tracking
     - ``billing`` -- Billing records and statistics
     - ``git`` -- Git operations on computers (compatibility helper)
+    - ``notifications`` -- In-app notifications and push token registration
 
     For simple use cases, use the :meth:`run` method which handles thread
     creation and streaming automatically.
@@ -131,6 +136,7 @@ class ComputerAgentsClient:
 
         # Initialize all resource managers
         self.threads = ThreadsResource(self.api)
+        self.tasks = TasksResource(self.api)
         self.environments = EnvironmentsResource(self.api)
         self.computers = self.environments
         self.agents = AgentsResource(self.api)
@@ -140,6 +146,7 @@ class ComputerAgentsClient:
         self.auth = AuthResource(self.api)
         self.runtimes = AgentRuntimesResource(self.api)
         self.agent_runtimes = self.runtimes
+        self.secrets = SecretsResource(self.api)
         self.databases = DatabasesResource(self.api)
         self.skills = SkillsResource(self.api)
         self.files = FilesResource(self.api)
@@ -149,6 +156,7 @@ class ComputerAgentsClient:
         self.budget = BudgetResource(self.api)
         self.billing = BillingResource(self.api)
         self.git = GitResource(self.api)
+        self.notifications = NotificationsResource(self.api)
         self.projects = ProjectsResource(self.api)
 
         # Cached default environment (populated on first run without environment_id)

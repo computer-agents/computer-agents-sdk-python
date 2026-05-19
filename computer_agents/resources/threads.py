@@ -18,8 +18,12 @@ from ..types import (
     SearchThreadsParams,
     SearchThreadsResponse,
     Thread,
+    ThreadFeedbackReport,
+    ThreadFeedbackSummary,
     ThreadLogEntry,
     ThreadMessage,
+    ThreadPermissionDecisionResponse,
+    ThreadPermissionRequest,
 )
 
 
@@ -376,6 +380,102 @@ class ThreadsResource:
     def get_diffs(self, thread_id: str) -> list[dict[str, Any]]:
         resp = self._client.get(f"/threads/{thread_id}/diffs")
         return resp.get("diffs") or resp.get("data") or []
+
+    def get_feedback(self, thread_id: str) -> ThreadFeedbackSummary:
+        """Get aggregated thumbs up/down feedback for a thread."""
+        return self._client.get(f"/threads/{thread_id}/feedback")
+
+    def set_feedback(self, thread_id: str, rating: str) -> ThreadFeedbackSummary:
+        """Store the current user's thumbs up/down feedback for a thread."""
+        return self._client.post(
+            f"/threads/{thread_id}/feedback",
+            {"rating": rating},
+        )
+
+    def report_issue(
+        self,
+        thread_id: str,
+        *,
+        report_type: str,
+        message: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> ThreadFeedbackReport:
+        """Report qualitative feedback or an issue for a thread."""
+        body: dict[str, Any] = {
+            "reportType": report_type,
+            "message": message,
+        }
+        if metadata is not None:
+            body["metadata"] = metadata
+        return self._client.post(f"/threads/{thread_id}/feedback/report", body)
+
+    def report_feedback(
+        self,
+        thread_id: str,
+        *,
+        report_type: str,
+        message: str,
+        metadata: dict[str, Any] | None = None,
+    ) -> ThreadFeedbackReport:
+        """Alias for :meth:`report_issue`."""
+        return self.report_issue(
+            thread_id,
+            report_type=report_type,
+            message=message,
+            metadata=metadata,
+        )
+
+    def list_permission_requests(self, thread_id: str) -> list[ThreadPermissionRequest]:
+        """List pending runtime permission requests for a thread."""
+        resp = self._client.get(f"/threads/{thread_id}/permission-requests")
+        return resp["data"]
+
+    def decide_permission_request(
+        self,
+        thread_id: str,
+        request_id: str,
+        *,
+        decision: str,
+        reason: str | None = None,
+    ) -> ThreadPermissionDecisionResponse:
+        """Approve or deny a runtime permission request."""
+        body: dict[str, Any] = {"decision": decision}
+        if reason is not None:
+            body["reason"] = reason
+        return self._client.post(
+            f"/threads/{thread_id}/permission-requests/{request_id}/decision",
+            body,
+        )
+
+    def approve_permission_request(
+        self,
+        thread_id: str,
+        request_id: str,
+        *,
+        reason: str | None = None,
+    ) -> ThreadPermissionDecisionResponse:
+        """Approve a runtime permission request."""
+        return self.decide_permission_request(
+            thread_id,
+            request_id,
+            decision="allow",
+            reason=reason,
+        )
+
+    def deny_permission_request(
+        self,
+        thread_id: str,
+        request_id: str,
+        *,
+        reason: str | None = None,
+    ) -> ThreadPermissionDecisionResponse:
+        """Deny a runtime permission request."""
+        return self.decide_permission_request(
+            thread_id,
+            request_id,
+            decision="deny",
+            reason=reason,
+        )
 
     def list_research(self, thread_id: str) -> list[ResearchSession]:
         """List deep research sessions for a thread."""

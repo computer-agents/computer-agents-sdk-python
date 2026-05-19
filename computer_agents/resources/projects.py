@@ -9,7 +9,21 @@ from __future__ import annotations
 from typing import Any
 
 from .._api_client import ApiClient
-from ..types import FileEntry, Project
+from ..types import FileEntry, Project, ProjectDetailResult, ProjectListResult
+
+
+_FIELD_ALIASES = {
+    "default_environment_id": "defaultEnvironmentId",
+    "environment_ids": "environmentIds",
+}
+
+
+def _api_body(params: dict[str, Any]) -> dict[str, Any]:
+    return {
+        _FIELD_ALIASES.get(key, key): value
+        for key, value in params.items()
+        if value is not None
+    }
 
 
 class ProjectsResource:
@@ -21,6 +35,69 @@ class ProjectsResource:
 
     def __init__(self, client: ApiClient) -> None:
         self._client = client
+
+    def list(
+        self,
+        *,
+        type: str | None = None,
+        q: str | None = None,
+        limit: int | None = None,
+    ) -> ProjectListResult:
+        """List planning projects for the authenticated user."""
+        query = {
+            key: value
+            for key, value in {"type": type, "q": q, "limit": limit}.items()
+            if value is not None
+        }
+        resp = self._client.get("/projects", query=query or None)
+        data = resp.get("data", [])
+        return {
+            "data": data,
+            "hasMore": resp.get("has_more", False),
+            "total": resp.get("total_count", len(data)),
+        }
+
+    def create(self, name: str, **params: Any) -> Project:
+        """Create a planning project."""
+        resp = self._client.post("/projects", {"name": name, **_api_body(params)})
+        return resp["project"]
+
+    def get_by_id(self, project_id: str) -> ProjectDetailResult:
+        """Get a planning project by ID."""
+        return self._client.get(f"/projects/{project_id}")
+
+    def update_by_id(self, project_id: str, **params: Any) -> Project:
+        """Update a planning project by ID."""
+        resp = self._client.patch(f"/projects/{project_id}", _api_body(params))
+        return resp["project"]
+
+    def delete_by_id(self, project_id: str) -> dict[str, Any]:
+        """Delete a planning project by ID."""
+        return self._client.delete(f"/projects/{project_id}")
+
+    def list_schedules(
+        self,
+        project_id: str,
+        *,
+        range_start: str | None = None,
+        range_end: str | None = None,
+    ) -> dict[str, Any]:
+        """List schedules attached to a planning project."""
+        query = {
+            key: value
+            for key, value in {
+                "rangeStart": range_start,
+                "rangeEnd": range_end,
+            }.items()
+            if value is not None
+        }
+        resp = self._client.get(f"/projects/{project_id}/schedules", query=query or None)
+        data = resp.get("data", [])
+        return {
+            "data": data,
+            "hasMore": resp.get("has_more", False),
+            "total": resp.get("total_count", len(data)),
+        }
 
     def get(self) -> Project:
         """Get the current project (bound to this API key)."""

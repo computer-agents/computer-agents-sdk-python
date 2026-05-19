@@ -53,7 +53,7 @@ class FilesResource:
         encoded = "/".join(quote(part, safe="") for part in normalized.split("/"))
         resp = self._client.request_raw(
             "GET",
-            f"/environments/{environment_id}/files/{encoded}",
+            f"/environments/{environment_id}/files/download/{encoded}",
         )
         return resp.text
 
@@ -63,9 +63,13 @@ class FilesResource:
         encoded = "/".join(quote(part, safe="") for part in normalized.split("/"))
         resp = self._client.request_raw(
             "GET",
-            f"/environments/{environment_id}/files/{encoded}",
+            f"/environments/{environment_id}/files/download/{encoded}",
         )
         return resp.content
+
+    def download_directory(self, environment_id: str, folder_path: str) -> bytes:
+        """Download a directory as a zip archive."""
+        return self.download_file(environment_id, folder_path)
 
     def upload_file(
         self,

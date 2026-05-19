@@ -52,6 +52,9 @@ class Project(TypedDict, total=False):
     type: ProjectType
     sources: List[ProjectSource]
     userId: str
+    color: Optional[str]
+    defaultEnvironmentId: Optional[str]
+    environmentIds: List[str]
     metadata: Dict[str, Any]
     tags: List[str]
     createdAt: str
@@ -65,6 +68,9 @@ class CreateProjectParams(TypedDict, total=False):
     description: str
     type: ProjectType
     sources: List[ProjectSource]
+    color: Optional[str]
+    environmentIds: List[str]
+    defaultEnvironmentId: Optional[str]
     metadata: Dict[str, Any]
     tags: List[str]
 
@@ -72,6 +78,9 @@ class CreateProjectParams(TypedDict, total=False):
 class UpdateProjectParams(TypedDict, total=False):
     name: str
     description: str
+    color: Optional[str]
+    environmentIds: List[str]
+    defaultEnvironmentId: Optional[str]
     metadata: Dict[str, Any]
     tags: List[str]
 
@@ -82,6 +91,38 @@ class ProjectStats(TypedDict, total=False):
     totalTokens: int
     totalCost: float
     storageBytes: int
+
+
+class ProjectSummary(TypedDict, total=False):
+    environmentsCount: int
+    threadsCount: int
+    activeThreadsCount: int
+    tasksCount: int
+    openTasksCount: int
+    sprintCount: int
+    activeSprintCount: int
+    releaseCount: int
+    activeReleaseCount: int
+
+
+class ProjectListParams(TypedDict, total=False):
+    type: ProjectType
+    q: str
+    limit: int
+
+
+class ProjectListResult(TypedDict):
+    data: List[Project]
+    hasMore: bool
+    total: int
+
+
+class ProjectDetailResult(TypedDict, total=False):
+    project: Project
+    summary: ProjectSummary
+    environments: List["Environment"]
+    recentThreads: List["Thread"]
+    stats: ProjectStats
 
 
 # ============================================================================
@@ -413,7 +454,7 @@ class EnvironmentForkFromSnapshotResponse(TypedDict, total=False):
 # ============================================================================
 
 ThreadStatus = Literal[
-    "active", "running", "completed", "failed",
+    "active", "running", "permission_asked", "completed", "failed",
     "archived", "cancelled", "deleted",
 ]
 
@@ -490,6 +531,8 @@ class ThreadLogEntry(TypedDict, total=False):
     content: str
     timestamp: str
     relativeTime: str
+    logType: str
+    metadata: Optional[Dict[str, Any]]
 
 
 class ResearchSession(TypedDict, total=False):
@@ -503,6 +546,347 @@ class ResearchSession(TypedDict, total=False):
     updatedAt: str
 
 
+ThreadFeedbackRating = Literal["up", "down"]
+ThreadFeedbackReportType = Literal["general", "bug", "child_safety", "response"]
+
+
+class ThreadFeedbackSummary(TypedDict):
+    threadId: str
+    upCount: int
+    downCount: int
+    userRating: Optional[ThreadFeedbackRating]
+    reportCount: int
+
+
+class ThreadFeedbackReportCreate(TypedDict, total=False):
+    reportType: ThreadFeedbackReportType
+    message: str
+    metadata: Optional[Dict[str, Any]]
+
+
+class ThreadFeedbackReport(TypedDict, total=False):
+    id: str
+    threadId: str
+    userId: str
+    reportType: ThreadFeedbackReportType
+    message: str
+    metadata: Optional[Dict[str, Any]]
+    createdAt: str
+
+
+class ThreadPermissionRequest(TypedDict, total=False):
+    requestId: str
+    threadId: str
+    userId: str
+    toolName: str
+    input: str
+    currentMode: str
+    requiredMode: str
+    reason: Optional[str]
+    createdAt: str
+
+
+class ThreadPermissionDecisionParams(TypedDict, total=False):
+    decision: Literal["allow", "deny"]
+    reason: Optional[str]
+
+
+class ThreadPermissionDecisionResponse(TypedDict, total=False):
+    ok: bool
+    requestId: str
+    decision: Literal["allow", "deny"]
+    active: bool
+    message: Optional[str]
+
+
+# ============================================================================
+# Task Types
+# ============================================================================
+
+TaskStatus = Literal["backlog", "todo", "in_progress", "blocked", "in_review", "done"]
+TaskPriority = Literal["low", "medium", "high", "urgent"]
+TaskType = Literal["task", "subtask"]
+TaskCommentAuthorType = Literal["user", "agent", "system"]
+TaskSprintStatus = Literal["planned", "active", "completed"]
+TaskReleaseStatus = Literal["planned", "active", "completed"]
+
+
+class Task(TypedDict, total=False):
+    object: Literal["task"]
+    id: str
+    userId: str
+    projectId: Optional[str]
+    releaseId: Optional[str]
+    sprintId: Optional[str]
+    title: str
+    description: str
+    status: TaskStatus
+    priority: TaskPriority
+    type: TaskType
+    parentTaskId: Optional[str]
+    assigneeAgentId: Optional[str]
+    dependencyIds: List[str]
+    linkedThreadIds: List[str]
+    lastStartedThreadId: Optional[str]
+    scheduledStartAt: Optional[str]
+    scheduledEndAt: Optional[str]
+    dueAt: Optional[str]
+    completedAt: Optional[str]
+    sortOrder: float
+    reviewRequired: bool
+    reviewerActorId: Optional[str]
+    reviewerActorKind: Optional[str]
+    reviewerName: Optional[str]
+    metadata: Optional[Dict[str, Any]]
+    createdAt: str
+    updatedAt: str
+
+
+class TaskListParams(TypedDict, total=False):
+    limit: int
+    offset: int
+    projectId: Optional[str]
+    releaseId: Optional[str]
+    sprintId: Optional[str]
+    status: TaskStatus
+    assigneeAgentId: str
+    q: str
+
+
+class CreateTaskParams(TypedDict, total=False):
+    title: str
+    description: str
+    projectId: Optional[str]
+    releaseId: Optional[str]
+    status: TaskStatus
+    priority: TaskPriority
+    type: TaskType
+    taskType: TaskType
+    parentTaskId: Optional[str]
+    sprintId: Optional[str]
+    assigneeAgentId: Optional[str]
+    dependencyIds: List[str]
+    linkedThreadIds: List[str]
+    lastStartedThreadId: Optional[str]
+    scheduledStartAt: Optional[str]
+    scheduledEndAt: Optional[str]
+    dueAt: Optional[str]
+    completedAt: Optional[str]
+    sortOrder: float
+    metadata: Optional[Dict[str, Any]]
+
+
+class UpdateTaskParams(CreateTaskParams, total=False):
+    pass
+
+
+class TaskListResult(TypedDict):
+    data: List[Task]
+    hasMore: bool
+    total: int
+
+
+class TaskDetails(TypedDict, total=False):
+    project: Optional[Project]
+    release: Optional["TaskRelease"]
+    sprint: Optional["TaskSprint"]
+    assignee: Optional["CloudAgent"]
+    dependencies: List[Task]
+    dependents: List[Task]
+    subtasks: List[Task]
+    subtaskIds: List[str]
+    parentTask: Optional[Task]
+    parentTaskId: Optional[str]
+    taskType: TaskType
+    review: Optional[Dict[str, Any]]
+    linkedThreads: List[Thread]
+    lastStartedThread: Optional[Thread]
+    blockedByDependencyIds: List[str]
+    readyToStart: bool
+
+
+class TaskDetailResult(TypedDict, total=False):
+    task: Task
+    details: TaskDetails
+    comments: List["TaskComment"]
+
+
+class TaskComment(TypedDict, total=False):
+    object: Literal["task.comment"]
+    id: str
+    userId: str
+    projectId: Optional[str]
+    taskId: str
+    task: Task
+    body: str
+    authorType: TaskCommentAuthorType
+    authorAgentId: Optional[str]
+    authorName: Optional[str]
+    sourceThreadId: Optional[str]
+    threadId: Optional[str]
+    metadata: Optional[Dict[str, Any]]
+    createdAt: str
+    updatedAt: str
+
+
+class TaskCommentCreateParams(TypedDict, total=False):
+    body: str
+    content: str
+    authorType: TaskCommentAuthorType
+    authorAgentId: Optional[str]
+    authorName: Optional[str]
+    sourceThreadId: Optional[str]
+    threadId: Optional[str]
+    metadata: Optional[Dict[str, Any]]
+
+
+class TaskCommentListParams(TypedDict, total=False):
+    authorType: TaskCommentAuthorType
+    authorAgentId: str
+    limit: int
+    offset: int
+
+
+class TaskCommentListResult(TypedDict):
+    data: List[TaskComment]
+    hasMore: bool
+    total: int
+
+
+class TaskSprint(TypedDict, total=False):
+    id: str
+    userId: str
+    projectId: Optional[str]
+    name: str
+    goal: str
+    status: TaskSprintStatus
+    startAt: Optional[str]
+    endAt: Optional[str]
+    sortOrder: float
+    metadata: Optional[Dict[str, Any]]
+    createdAt: str
+    updatedAt: str
+
+
+class TaskSprintCreateParams(TypedDict, total=False):
+    projectId: Optional[str]
+    name: str
+    goal: str
+    status: TaskSprintStatus
+    startAt: Optional[str]
+    endAt: Optional[str]
+    sortOrder: float
+    metadata: Optional[Dict[str, Any]]
+
+
+class TaskSprintUpdateParams(TaskSprintCreateParams, total=False):
+    pass
+
+
+class TaskSprintListParams(TypedDict, total=False):
+    projectId: Optional[str]
+    status: TaskSprintStatus
+    q: str
+    limit: int
+    offset: int
+
+
+class TaskSprintListResult(TypedDict):
+    data: List[TaskSprint]
+    hasMore: bool
+    total: int
+
+
+class TaskSprintDetailResult(TypedDict, total=False):
+    sprint: TaskSprint
+    tasks: List[Task]
+
+
+class TaskRelease(TypedDict, total=False):
+    object: Literal["task.release"]
+    id: str
+    userId: str
+    projectId: Optional[str]
+    name: str
+    description: str
+    startAt: Optional[str]
+    endAt: Optional[str]
+    sortOrder: float
+    status: TaskReleaseStatus
+    metadata: Optional[Dict[str, Any]]
+    taskCount: int
+    openTaskCount: int
+    taskIds: List[str]
+    createdAt: str
+    updatedAt: str
+
+
+class TaskReleaseCreateParams(TypedDict, total=False):
+    projectId: str
+    name: str
+    description: str
+    startAt: Optional[str]
+    endAt: Optional[str]
+    sortOrder: float
+    metadata: Optional[Dict[str, Any]]
+
+
+class TaskReleaseUpdateParams(TaskReleaseCreateParams, total=False):
+    pass
+
+
+class TaskReleaseListParams(TypedDict, total=False):
+    projectId: str
+    q: str
+    limit: int
+    offset: int
+
+
+class TaskReleaseListResult(TypedDict):
+    data: List[TaskRelease]
+    hasMore: bool
+    total: int
+
+
+class TaskReleaseDetailResult(TypedDict, total=False):
+    release: TaskRelease
+    tasks: List[Task]
+
+
+class TaskWorkspaceParams(TypedDict, total=False):
+    projectId: Optional[str]
+    q: str
+    rangeStart: str
+    rangeEnd: str
+
+
+class TaskWorkspaceResult(TypedDict):
+    workspace: Dict[str, Any]
+
+
+class TaskStartThreadParams(TypedDict, total=False):
+    environmentId: str
+    agentId: str
+    moveToInProgress: bool
+    metadata: Optional[Dict[str, Any]]
+
+
+class TaskStartThreadResult(TypedDict, total=False):
+    thread: Thread
+    task: Task
+    subtasks: List[Task]
+
+
+class TaskRunThreadParams(TaskStartThreadParams, total=False):
+    message: str
+    content: str
+    task: str
+
+
+class TaskRunThreadResult(TaskStartThreadResult, total=False):
+    execution: Dict[str, Any]
+
+
 # ============================================================================
 # Agent Config & Send Message
 # ============================================================================
@@ -512,8 +896,17 @@ BuiltinAgentModel = Literal[
     "claude-opus-4-6",
     "claude-sonnet-4-5",
     "claude-haiku-4-5",
+    "gpt-5.5-pro",
+    "gpt-5.5",
+    "gpt-5.4",
+    "gpt-5.4-mini",
+    "gpt-5.4-nano",
     "gemini-3-flash",
+    "gemini-3-1-flash",
     "gemini-3-1-pro",
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+    "kimi-k2.6",
 ]
 AgentModel = str
 ReasoningEffort = Literal["minimal", "low", "medium", "high"]
@@ -676,6 +1069,31 @@ class RunDiff(TypedDict, total=False):
 # Agent Types
 # ============================================================================
 
+PermissionAccessLevel = Literal["full_access", "ask_for_permission", "read_only", "no_access"]
+PermissionResourceType = Literal["agents", "skills", "servers", "computers", "files", "directories", "projects"]
+PermissionSetSubjectType = Literal["agent", "human_user", "team"]
+
+
+class PermissionRule(TypedDict, total=False):
+    id: str
+    targetId: str
+    path: str
+    access: PermissionAccessLevel
+    note: str
+
+
+class PermissionResourcePolicy(TypedDict, total=False):
+    defaultAccess: PermissionAccessLevel
+    rules: List[PermissionRule]
+
+
+class PermissionSet(TypedDict, total=False):
+    version: Literal[1]
+    subjectType: PermissionSetSubjectType
+    defaultAccess: PermissionAccessLevel
+    resources: Dict[PermissionResourceType, PermissionResourcePolicy]
+
+
 class AgentBinary(TypedDict, total=False):
     path: str
     args: List[str]
@@ -692,6 +1110,7 @@ class CloudAgent(TypedDict, total=False):
     reasoningEffort: ReasoningEffort
     enabledSkills: List[str]
     deepResearchModel: DeepResearchModel
+    permissionSet: PermissionSet
     metadata: Dict[str, Any]
     createdAt: str
     updatedAt: str
@@ -707,6 +1126,7 @@ class CreateAgentParams(TypedDict, total=False):
     reasoningEffort: ReasoningEffort
     enabledSkills: List[str]
     deepResearchModel: DeepResearchModel
+    permissionSet: PermissionSet
     metadata: Dict[str, Any]
 
 
@@ -717,6 +1137,8 @@ class UpdateAgentParams(TypedDict, total=False):
     instructions: str
     reasoningEffort: ReasoningEffort
     enabledSkills: List[str]
+    deepResearchModel: DeepResearchModel
+    permissionSet: Optional[PermissionSet]
     metadata: Dict[str, Any]
 
 
@@ -820,6 +1242,39 @@ class UploadFileParams(TypedDict, total=False):
 class CreateDirectoryParams(TypedDict, total=False):
     path: str  # required
     environmentId: str
+
+
+# ============================================================================
+# Notification Types
+# ============================================================================
+
+class InAppNotification(TypedDict, total=False):
+    id: str
+    html: str
+    createdAt: str
+    createdBy: Optional[str]
+    expiresAt: Optional[str]
+    metadata: Dict[str, Any]
+
+
+class PushTokenRegistration(TypedDict, total=False):
+    token: str
+    platform: str
+    bundleId: str
+
+
+class PushTokenRegistrationResponse(TypedDict):
+    success: bool
+    tokenId: str
+
+
+class PushTokenDeleteResponse(TypedDict):
+    success: bool
+
+
+class PushTokenDescriptor(TypedDict):
+    id: str
+    platform: str
 
 
 # ============================================================================
