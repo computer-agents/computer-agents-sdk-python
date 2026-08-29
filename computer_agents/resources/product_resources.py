@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from .._api_client import ApiClient
 from .resources import ResourcesResource
@@ -25,7 +26,12 @@ class _KindScopedResource:
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[dict[str, Any]]:
-        resources = self._resources.list(project_id=project_id, limit=limit, offset=offset)
+        resources = self._resources.list(
+            kind=self._kind,
+            project_id=project_id,
+            limit=limit,
+            offset=offset,
+        )
         return [resource for resource in resources if resource.get("kind") == self._kind]
 
     def get(self, server_id: str) -> dict[str, Any]:
@@ -38,6 +44,37 @@ class _KindScopedResource:
 
     def delete(self, server_id: str) -> bool:
         return self._resources.delete(server_id)
+
+    def list_versions(self, server_id: str) -> list[dict[str, Any]]:
+        return self._resources.list_versions(server_id)
+
+    def get_version(self, server_id: str, version_id: str) -> dict[str, Any]:
+        return self._resources.get_version(server_id, version_id)
+
+    def create_version(self, server_id: str, **params: Any) -> dict[str, Any]:
+        return self._resources.create_version(server_id, **params)
+
+    def update_version(self, server_id: str, version_id: str, **params: Any) -> dict[str, Any]:
+        return self._resources.update_version(server_id, version_id, **params)
+
+    def delete_version(self, server_id: str, version_id: str) -> bool:
+        return self._resources.delete_version(server_id, version_id)
+
+    def publish_version(self, server_id: str, version_id: str) -> dict[str, Any]:
+        return self._resources.publish_version(server_id, version_id)
+
+    def unpublish_version(self, server_id: str, version_id: str) -> dict[str, Any]:
+        return self._resources.unpublish_version(server_id, version_id)
+
+    def restore_version(self, server_id: str, version_id: str) -> dict[str, Any]:
+        return self._resources.restore_version(server_id, version_id)
+
+    def compare_versions(self, server_id: str, *, base_version_id: str, target_version_id: str) -> dict[str, Any]:
+        return self._resources.compare_versions(
+            server_id,
+            base_version_id=base_version_id,
+            target_version_id=target_version_id,
+        )
 
     def deploy(self, server_id: str) -> dict[str, Any]:
         return self._resources.deploy(server_id)
@@ -61,8 +98,13 @@ class _KindScopedResource:
     def invoke(self, server_id: str, **params: Any) -> dict[str, Any]:
         return self._resources.invoke(server_id, **params)
 
-    def get_analytics(self, server_id: str) -> dict[str, Any]:
-        return self._resources.get_analytics(server_id)
+    def get_analytics(
+        self,
+        server_id: str,
+        *,
+        period: str | None = None,
+    ) -> dict[str, Any]:
+        return self._resources.get_analytics(server_id, period=period)
 
     def get_logs(
         self,
@@ -252,6 +294,130 @@ class AuthResource(_KindScopedResource):
 class AgentRuntimesResource(_KindScopedResource):
     def __init__(self, client: ApiClient) -> None:
         super().__init__(client, "agent_runtime")
+        self._client = client
+
+    @staticmethod
+    def _path(runtime_id: str) -> str:
+        return f"/agent-runtimes/{quote(runtime_id, safe='')}"
+
+    def create(self, **params: Any) -> dict[str, Any]:
+        response = self._client.post("/agent-runtimes", params)
+        return response["server"]
+
+    def list(
+        self,
+        *,
+        project_id: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[dict[str, Any]]:
+        query: dict[str, Any] = {}
+        if project_id is not None:
+            query["projectId"] = project_id
+        if limit is not None:
+            query["limit"] = limit
+        if offset is not None:
+            query["offset"] = offset
+        response = self._client.get("/agent-runtimes", query=query or None)
+        return response.get("data") or response.get("servers") or []
+
+    def get(self, runtime_id: str) -> dict[str, Any]:
+        response = self._client.get(self._path(runtime_id))
+        return response["server"]
+
+    def get_deployment(self, runtime_id: str) -> dict[str, Any]:
+        response = self._client.get(self._path(runtime_id))
+        return response["agentRuntime"]
+
+    def update(  # type: ignore[override]
+        self,
+        runtime_id: str,
+        **params: Any,
+    ) -> dict[str, Any]:
+        response = self._client.patch(self._path(runtime_id), params)
+        return response["server"]
+
+    def delete(self, runtime_id: str) -> bool:
+        response = self._client.delete(self._path(runtime_id))
+        return bool(response.get("deleted"))
+
+    def deploy(self, runtime_id: str) -> dict[str, Any]:
+        return self._client.post(f"{self._path(runtime_id)}/deploy", {})
+
+    def decommission(self, runtime_id: str) -> dict[str, Any]:
+        return self._client.post(f"{self._path(runtime_id)}/decommission", {})
+
+    def list_deployments(self, runtime_id: str) -> list[dict[str, Any]]:
+        response = self._client.get(f"{self._path(runtime_id)}/deployments")
+        return response.get("deployments") or response.get("data") or []
+
+    def list_runs(self, runtime_id: str, *, limit: int | None = None) -> list[dict[str, Any]]:
+        query = {"limit": limit} if limit is not None else None
+        response = self._client.get(f"{self._path(runtime_id)}/runs", query=query)
+        return response.get("runs") or []
+
+    def start_run(
+        self,
+        runtime_id: str,
+        *,
+        content: str | None = None,
+        prompt: str | None = None,
+        title: str | None = None,
+        mode: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        body = {
+            key: value
+            for key, value in {
+                "content": content,
+                "prompt": prompt,
+                "title": title,
+                "mode": mode,
+                "metadata": metadata,
+            }.items()
+            if value is not None
+        }
+        return self._client.post(f"{self._path(runtime_id)}/runs", body)
+
+    def get_run(self, runtime_id: str, run_id: str) -> dict[str, Any]:
+        return self._client.get(f"{self._path(runtime_id)}/runs/{quote(run_id, safe='')}")
+
+    def send_input(
+        self,
+        runtime_id: str,
+        run_id: str,
+        *,
+        content: str | None = None,
+        prompt: str | None = None,
+        mode: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        body = {
+            key: value
+            for key, value in {
+                "content": content,
+                "prompt": prompt,
+                "mode": mode,
+                "metadata": metadata,
+            }.items()
+            if value is not None
+        }
+        return self._client.post(
+            f"{self._path(runtime_id)}/runs/{quote(run_id, safe='')}/input",
+            body,
+        )
+
+    def get_events(self, runtime_id: str, run_id: str) -> list[dict[str, Any]]:
+        response = self._client.get(
+            f"{self._path(runtime_id)}/runs/{quote(run_id, safe='')}/events",
+        )
+        return response.get("events") or []
+
+    def cancel_run(self, runtime_id: str, run_id: str) -> dict[str, Any]:
+        return self._client.post(
+            f"{self._path(runtime_id)}/runs/{quote(run_id, safe='')}/cancel",
+            {},
+        )
 
 
 class SecretsResource(_KindScopedResource):

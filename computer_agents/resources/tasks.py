@@ -6,11 +6,12 @@ and task-to-thread execution.
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 from .._api_client import ApiClient
 from ..types import (
     Task,
+    TaskAgentSessionListResult,
     TaskComment,
     TaskCommentListResult,
     TaskDetailResult,
@@ -51,18 +52,23 @@ _FIELD_ALIASES = {
     "due_at": "dueAt",
     "end_at": "endAt",
     "environment_id": "environmentId",
+    "execution_mode": "executionMode",
+    "idempotency_key": "idempotencyKey",
     "last_started_thread_id": "lastStartedThreadId",
     "linked_thread_ids": "linkedThreadIds",
     "move_to_in_progress": "moveToInProgress",
     "parent_task_id": "parentTaskId",
+    "parent_comment_id": "parentCommentId",
     "project_id": "projectId",
     "release_id": "releaseId",
+    "reply_to_comment_id": "replyToCommentId",
     "scheduled_end_at": "scheduledEndAt",
     "scheduled_start_at": "scheduledStartAt",
     "sort_order": "sortOrder",
     "source_thread_id": "sourceThreadId",
     "sprint_id": "sprintId",
     "start_at": "startAt",
+    "success_criteria": "successCriteria",
     "task_type": "taskType",
     "thread_id": "threadId",
 }
@@ -108,7 +114,7 @@ class TasksResource:
                 "offset": offset,
             }),
         )
-        return _list_result(resp)
+        return cast(TaskListResult, _list_result(resp))
 
     def create(self, title: str, **params: Any) -> Task:
         """Create a task."""
@@ -116,9 +122,22 @@ class TasksResource:
         resp = self._client.post("/tasks", body)
         return resp["task"]
 
-    def get(self, task_id: str) -> TaskDetailResult:
+    def get(
+        self,
+        task_id: str,
+        *,
+        thread_details: str | None = None,
+    ) -> TaskDetailResult:
         """Get a task with details, linked threads, and comments."""
-        return self._client.get(f"/tasks/{task_id}")
+        return self._client.get(
+            f"/tasks/{task_id}",
+            query={"threadDetails": thread_details} if thread_details is not None else None,
+        )
+
+    def get_preview(self, task_id: str) -> Task:
+        """Get the compact task representation used by preview cards."""
+        response = self._client.get(f"/tasks/{task_id}", query={"view": "preview"})
+        return response["task"]
 
     def update(self, task_id: str, **params: Any) -> Task:
         """Update a task."""
@@ -148,6 +167,21 @@ class TasksResource:
             }),
         )
 
+    def list_global_activity(
+        self,
+        *,
+        project_id: str | None = None,
+        limit: int | None = None,
+        **params: Any,
+    ) -> dict[str, Any]:
+        """List organization-wide task activity visible to the current actor."""
+        query = dict(params)
+        query.update(_query_from_kwargs({
+            "projectId": project_id,
+            "limit": limit,
+        }) or {})
+        return self._client.get("/tasks/activity", query=query or None)
+
     def list_comments(
         self,
         task_id: str,
@@ -167,20 +201,79 @@ class TasksResource:
                 "offset": offset,
             }),
         )
-        return _list_result(resp)
+        return cast(TaskCommentListResult, _list_result(resp))
 
     def create_comment(self, task_id: str, **params: Any) -> TaskComment:
         """Create a task comment."""
         resp = self._client.post(f"/tasks/{task_id}/comments", _api_body(params))
         return resp["comment"]
 
+    def list_activity(
+        self,
+        task_id: str,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict[str, Any]:
+        """List the chronological audit trail for a task."""
+        return self._client.get(
+            f"/tasks/{task_id}/activity",
+            query=_query_from_kwargs({"limit": limit, "offset": offset}),
+        )
+
+    def get_activity_subscription(self, task_id: str) -> dict[str, Any]:
+        """Get the current user's activity subscription for a task."""
+        return self._client.get(f"/tasks/{task_id}/activity-subscription")
+
+    def update_activity_subscription(
+        self,
+        task_id: str,
+        subscribed: bool,
+    ) -> dict[str, Any]:
+        """Replace the current user's activity subscription for a task."""
+        return self._client.put(
+            f"/tasks/{task_id}/activity-subscription",
+            {"subscribed": subscribed},
+        )
+
+    def list_agent_sessions(
+        self,
+        task_id: str,
+        *,
+        limit: int | None = None,
+    ) -> TaskAgentSessionListResult:
+        """List durable agent execution attempts for a task."""
+        resp = self._client.get(
+            f"/tasks/{task_id}/agent-sessions",
+            query={"limit": limit} if limit is not None else None,
+        )
+        return {
+            "data": resp.get("data", []),
+            "hasMore": resp.get("has_more", False),
+        }
+
     def start_thread(self, task_id: str, **params: Any) -> TaskStartThreadResult:
-        """Create and link a new thread for a task."""
-        return self._client.post(f"/tasks/{task_id}/start-thread", _api_body(params) or None)
+        """Deprecated: use run_thread(..., execution_mode="deferred")."""
+        payload = _api_body(params)
+        payload["executionMode"] = "deferred"
+        idempotency_key = str(payload.get("idempotencyKey") or "").strip()
+        return self._client.request(
+            "POST",
+            f"/tasks/{task_id}/run-thread",
+            body=payload,
+            headers={"Idempotency-Key": idempotency_key} if idempotency_key else None,
+        )
 
     def run_thread(self, task_id: str, **params: Any) -> TaskRunThreadResult:
-        """Create, link, and synchronously execute a new thread for a task."""
-        return self._client.post(f"/tasks/{task_id}/run-thread", _api_body(params) or None)
+        """Create a durable task attempt and run it blocking or deferred."""
+        payload = _api_body(params)
+        idempotency_key = str(payload.get("idempotencyKey") or "").strip()
+        return self._client.request(
+            "POST",
+            f"/tasks/{task_id}/run-thread",
+            body=payload or None,
+            headers={"Idempotency-Key": idempotency_key} if idempotency_key else None,
+        )
 
     def list_sprints(
         self,
@@ -202,7 +295,7 @@ class TasksResource:
                 "offset": offset,
             }),
         )
-        return _list_result(resp)
+        return cast(TaskSprintListResult, _list_result(resp))
 
     def create_sprint(self, name: str, **params: Any) -> TaskSprint:
         """Create a sprint."""
@@ -240,7 +333,7 @@ class TasksResource:
                 "offset": offset,
             }),
         )
-        return _list_result(resp)
+        return cast(TaskReleaseListResult, _list_result(resp))
 
     def create_release(self, project_id: str, name: str, **params: Any) -> TaskRelease:
         """Create a release."""

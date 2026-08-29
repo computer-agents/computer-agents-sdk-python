@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "computer-agents"
-version = "2.6.3"
+version = "2.6.4"
 description = "Official Python SDK for Computer Agents. Run agents, manage cloud computers and projects, and deploy web apps, functions, databases, auth, runtimes, and secrets."
 readme = "README.md"
 license = "MIT"

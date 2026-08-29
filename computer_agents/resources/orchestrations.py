@@ -57,6 +57,7 @@ class OrchestrationsResource:
         self,
         *,
         environment_id: str | None = None,
+        status: str | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[Orchestration]:
@@ -64,6 +65,8 @@ class OrchestrationsResource:
         query: dict[str, Any] = {}
         if environment_id is not None:
             query["environmentId"] = environment_id
+        if status is not None:
+            query["status"] = status
         if limit is not None:
             query["limit"] = limit
         if offset is not None:
@@ -84,6 +87,7 @@ class OrchestrationsResource:
             "strategy": "strategy",
             "coordinator_agent_id": "coordinatorAgentId",
             "steps": "steps",
+            "status": "status",
         }
         for py_key, api_key in key_map.items():
             if py_key in params:

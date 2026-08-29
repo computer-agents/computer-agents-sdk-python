@@ -44,6 +44,37 @@ You can also pass the key directly:
 client = ComputerAgentsClient(api_key="ca_...")
 ```
 
+## Cloud and Appliance Base URLs
+
+Set `base_url` per client to target a local appliance or another Computer
+Agents deployment:
+
+```python
+client = ComputerAgentsClient(
+    api_key="ca_...",
+    base_url="https://stockifi.computer-agents.com",
+)
+```
+
+You can alternatively configure a process-wide default:
+
+```bash
+export COMPUTER_AGENTS_BASE_URL="https://stockifi.computer-agents.com"
+```
+
+An origin and an already-versioned URL are both accepted, so
+`https://stockifi.computer-agents.com` and
+`https://stockifi.computer-agents.com/v1` resolve to the same API. The setting
+applies to regular requests, event streams, downloads, and multipart uploads.
+The older `COMPUTER_AGENTS_API_URL` environment variable remains supported.
+
+For direct HTTP calls, append the canonical `/v1` API prefix:
+
+```bash
+curl https://stockifi.computer-agents.com/v1/agents \
+  -H "Authorization: Bearer $COMPUTER_AGENTS_API_KEY"
+```
+
 ## Quick Start
 
 Run a task and stream the agent's work:
@@ -70,8 +101,16 @@ print(result.thread_id)
 | **Computers** | Persistent cloud workspaces with files, runtimes, packages, GUI access, Git, snapshots, and deployment context. |
 | **Projects** | Shared workspaces for complex work: strategy, releases, tasks, comments, resources, review state, and task-linked threads. |
 | **Agents** | Reusable agent profiles with model, instructions, skills, reasoning effort, and analytics. |
+| **Tests** | Versioned engineering verification plans with durable runs, case evidence, artifacts, commit identity, and pass/fail gates. |
 | **Resources** | Deployable product surfaces: Web Apps, Functions, Databases, Auth, Agent Runtimes, and Secrets. |
 | **Skills** | Reusable capabilities agents can invoke, such as research, image generation, app deployment, or task management. |
+
+All 43 tenant-facing platform service groups—including prompts, knowledge,
+guardrails, evaluations, Tests, assurance, fine-tuning, optimization campaigns
+and candidates, Metronomes, Batches, Security Agents, evidence review,
+organization administration, and billing/inference endpoints—are available as
+first-class SDK managers. See the
+[API and SDK capability map](../../docs/API_SDK_CAPABILITY_PARITY.md).
 
 ## Persistent Computers and Threads
 
@@ -83,7 +122,7 @@ computer = client.computers.create(
     internet_access=True,
 )
 
-thread = client.threads.create(computer_id=computer["id"])
+thread = client.threads.create(environment_id=computer["id"])
 
 client.threads.send_message(
     thread["id"],
@@ -115,6 +154,11 @@ project = client.projects.create(
 release = client.tasks.create_release(
     project["id"],
     "v0.1 MVP",
+    description="Ship the first production-ready customer workflow.",
+    success_criteria=[
+        "Customers can sign in and update account settings.",
+        "The release passes its linked test and assurance gates.",
+    ],
 )
 
 task = client.tasks.create(
@@ -130,11 +174,118 @@ client.tasks.create_comment(
     body="Include password reset and session validation.",
 )
 
-client.tasks.start_thread(
+client.tasks.run_thread(
     task["id"],
     environment_id=computer["id"],
 )
 ```
+
+For an autonomous project, submit one strict delivery contract and let the
+control plane create the standard graph and bindings atomically:
+
+```python
+planned = client.projects.put_delivery_plan(
+    project["id"],
+    contract,
+    idempotency_key=f"mission-control-{project['id']}-delivery-v1",
+)
+delivery_plan = client.projects.provision_delivery_plan(project["id"])
+
+print(delivery_plan["graph"]["nodes"])
+print(delivery_plan["bindings"])
+```
+
+The provisioned optimization job starts in `planned`; queue it only after the
+bound build, Test, and baseline Evaluation dependencies pass:
+
+```python
+optimization_job_id = delivery_plan["bindings"].get("optimizationJobId")
+if optimization_job_id:
+    client.fine_tuning.queue_job(
+        optimization_job_id,
+        source="project_delivery_graph",
+    )
+```
+
+## Tests, Evaluations, and Optimization
+
+Use `client.tests` for engineering verification. Test Plans are immutable by
+version, execute in a selected Computer Agents environment, and return
+case-level results plus a server-fingerprinted terminal evidence envelope.
+
+```python
+test_plan = client.tests.create(
+    name="Customer Portal release gate",
+    project_id=project["id"],
+    target_type="project",
+    definition={
+        "cases": [
+            {
+                "id": "unit",
+                "name": "Unit tests",
+                "kind": "command",
+                "command": "pytest",
+            },
+            {
+                "id": "health",
+                "name": "Deployed health contract",
+                "kind": "contract",
+                "request": {"method": "GET", "path": "/api/health"},
+                "assertions": [{"kind": "status", "equals": 200}],
+            },
+        ]
+    },
+)
+
+test_run = client.tests.run(
+    test_plan["id"],
+    environment_id=computer["id"],
+    project_id=project["id"],
+    task_id=task["id"],
+    release_id=release["id"],
+    commit_sha="0123456789abcdef",
+    trigger_type="mission_control",
+)
+
+evidence = client.tests.get_run(test_run["id"])
+print(evidence["status"], evidence["evidence"])
+
+assurance_policy = client.assurance.create_policy(
+    name="Customer Portal release assurance",
+    project_id=project["id"],
+    definition={
+        "testGates": [
+            {
+                "id": "engineering",
+                "testPlanId": test_plan["id"],
+                "versionId": test_plan["publishedVersionId"],
+                "requireCommitSha": True,
+            }
+        ],
+        "approval": {"mode": "manual"},
+    },
+)
+
+assurance_run = client.assurance.run(
+    assurance_policy["id"],
+    project_id=project["id"],
+    release_id=release["id"],
+    commit_sha="0123456789abcdef",
+    evidence_references={"testRunIds": [test_run["id"]]},
+)
+
+if assurance_run["status"] == "blocked":
+    client.assurance.approve(
+        assurance_run["id"],
+        assurance_run["evidence"]["fingerprint"],
+    )
+```
+
+Tests answer whether software and workflows work. `client.evaluations` measures
+behavioral quality on versioned datasets, while `client.fine_tuning` performs a
+bounded optimization job from Evaluation evidence. `client.assurance` verifies
+the actual terminal evidence, pins it to versioned release gates, and emits one
+fingerprinted decision.
 
 ## Deployable Server Resources
 
@@ -247,23 +398,46 @@ Use this Python SDK to create, bind, deploy, invoke, monitor, and operate those 
 ## Schedules, Triggers, and Orchestrations
 
 ```python
+automation_agent = client.agents.list()[0]
+
 client.schedules.create(
-    name="Daily competitor brief",
-    schedule_type="recurring",
-    cron_expression="0 9 * * *",
-    task="Research competitors and write a concise Markdown brief.",
+    "Daily competitor brief",
+    automation_agent["id"],
+    automation_agent["name"],
+    "Research competitors and write a concise Markdown brief.",
+    "recurring",
     environment_id=computer["id"],
+    cron_expression="0 9 * * *",
 )
 
 client.triggers.create(
-    name="New lead enrichment",
-    event_type="webhook",
-    task="Enrich the new lead and update the CRM database.",
+    "New lead enrichment",
+    computer["id"],
+    "webhook",
+    "lead.created",
+    {
+        "type": "send_message",
+        "message": "Enrich the new lead and update the CRM database.",
+    },
+    agent_id=automation_agent["id"],
 )
 
 client.orchestrations.create(
-    name="Research and build landing page",
-    objective="Research the market, write copy, and deploy a landing page.",
+    "Research and build landing page",
+    computer["id"],
+    "sequential",
+    [
+        {
+            "agentId": automation_agent["id"],
+            "name": "Research market",
+            "instructions": "Research the market and summarize the findings.",
+        },
+        {
+            "agentId": automation_agent["id"],
+            "name": "Build landing page",
+            "instructions": "Use the research to write and deploy a landing page.",
+        },
+    ],
 )
 ```
 
@@ -271,10 +445,11 @@ client.orchestrations.create(
 
 ```python
 models = client.agents.list_models()
+model = next(entry["id"] for entry in models["models"] if not entry.get("locked"))
 
 agent = client.agents.create(
     name="Senior Product Engineer",
-    model="deepseek-v4-pro",
+    model=model,
     instructions="Build carefully, test changes, and explain tradeoffs.",
     reasoning_effort="high",
 )

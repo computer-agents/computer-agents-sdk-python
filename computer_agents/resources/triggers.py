@@ -7,9 +7,15 @@ enable/disable control, testing, and execution history.
 from __future__ import annotations
 
 from typing import Any
+from urllib.parse import quote
 
 from .._api_client import ApiClient
-from ..types import Trigger, TriggerExecution
+from ..types import (
+    GitHubAutomationBinding,
+    GitHubAutomationExecution,
+    Trigger,
+    TriggerExecution,
+)
 
 
 class TriggersResource:
@@ -62,6 +68,7 @@ class TriggersResource:
         self,
         *,
         environment_id: str | None = None,
+        source: str | None = None,
         enabled: bool | None = None,
         limit: int | None = None,
         offset: int | None = None,
@@ -70,6 +77,8 @@ class TriggersResource:
         query: dict[str, Any] = {}
         if environment_id is not None:
             query["environmentId"] = environment_id
+        if source is not None:
+            query["source"] = source
         if enabled is not None:
             query["enabled"] = enabled
         if limit is not None:
@@ -146,5 +155,84 @@ class TriggersResource:
             query["offset"] = offset
         resp = self._client.get(
             f"/triggers/{trigger_id}/executions", query=query or None
+        )
+        return resp["data"]
+
+    # =========================================================================
+    # GitHub Automations
+    # =========================================================================
+
+    def list_github_automation_bindings(
+        self,
+        *,
+        scope_type: str,
+        scope_id: str,
+        repository_full_name: str | None = None,
+    ) -> list[GitHubAutomationBinding]:
+        """List webhook automation bindings for an organization or project."""
+        query: dict[str, Any] = {"scopeType": scope_type, "scopeId": scope_id}
+        if repository_full_name is not None:
+            query["repositoryFullName"] = repository_full_name
+        resp = self._client.get("/github/automations/bindings", query=query)
+        return resp["data"]
+
+    def upsert_github_automation_binding(
+        self,
+        *,
+        scope_type: str,
+        scope_id: str,
+        repository_full_name: str,
+        kind: str,
+        enabled: bool | None = None,
+        configuration: dict[str, Any] | None = None,
+    ) -> GitHubAutomationBinding:
+        """Create or replace a repository automation binding."""
+        body: dict[str, Any] = {
+            "scopeType": scope_type,
+            "scopeId": scope_id,
+            "repositoryFullName": repository_full_name,
+            "kind": kind,
+        }
+        if enabled is not None:
+            body["enabled"] = enabled
+        if configuration is not None:
+            body["configuration"] = configuration
+        resp = self._client.post("/github/automations/bindings", body)
+        return resp["binding"]
+
+    def update_github_automation_binding(
+        self,
+        binding_id: str,
+        *,
+        enabled: bool | None = None,
+        configuration: dict[str, Any] | None = None,
+    ) -> GitHubAutomationBinding:
+        """Update the mutable fields of a repository automation binding."""
+        body: dict[str, Any] = {}
+        if enabled is not None:
+            body["enabled"] = enabled
+        if configuration is not None:
+            body["configuration"] = configuration
+        resp = self._client.patch(
+            f"/github/automations/bindings/{quote(binding_id, safe='')}",
+            body,
+        )
+        return resp["binding"]
+
+    def delete_github_automation_binding(self, binding_id: str) -> None:
+        """Delete a repository automation binding."""
+        self._client.delete(f"/github/automations/bindings/{quote(binding_id, safe='')}")
+
+    def list_github_automation_executions(
+        self,
+        binding_id: str,
+        *,
+        limit: int | None = None,
+    ) -> list[GitHubAutomationExecution]:
+        """List the most recent executions of a repository automation binding."""
+        query = {"limit": limit} if limit is not None else None
+        resp = self._client.get(
+            f"/github/automations/bindings/{quote(binding_id, safe='')}/executions",
+            query=query,
         )
         return resp["data"]

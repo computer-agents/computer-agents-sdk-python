@@ -9,11 +9,23 @@ from typing import Any
 from urllib.parse import quote
 
 from .._api_client import ApiClient
+from .versioning import VersioningResource
+
+
+def _id(value: str) -> str:
+    return quote(value, safe="")
+
+
+def _query(params: dict[str, Any], **values: Any) -> dict[str, Any] | None:
+    query = dict(params)
+    query.update({key: value for key, value in values.items() if value is not None})
+    return query or None
 
 
 class ResourcesResource:
     def __init__(self, client: ApiClient) -> None:
         self._client = client
+        self._versions = VersioningResource(client, "/servers")
 
     def create(self, **params: Any) -> dict[str, Any]:
         resp = self._client.post("/servers", params)
@@ -22,11 +34,14 @@ class ResourcesResource:
     def list(
         self,
         *,
+        kind: str | None = None,
         project_id: str | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[dict[str, Any]]:
         query: dict[str, Any] = {}
+        if kind is not None:
+            query["kind"] = kind
         if project_id is not None:
             query["projectId"] = project_id
         if limit is not None:
@@ -48,8 +63,70 @@ class ResourcesResource:
         resp = self._client.delete(f"/servers/{server_id}")
         return bool(resp.get("deleted"))
 
-    def deploy(self, server_id: str) -> dict[str, Any]:
-        return self._client.post(f"/servers/{server_id}/deploy", {})
+    def list_versions(self, server_id: str) -> list[dict[str, Any]]:
+        """List saved resource versions."""
+        return self._versions.list(server_id)
+
+    def get_version(self, server_id: str, version_id: str) -> dict[str, Any]:
+        """Get one saved resource version."""
+        return self._versions.get(server_id, version_id)
+
+    def create_version(self, server_id: str, **params: Any) -> dict[str, Any]:
+        """Save the current resource or a supplied snapshot as a version."""
+        return self._versions.create(server_id, **params)
+
+    def update_version(self, server_id: str, version_id: str, **params: Any) -> dict[str, Any]:
+        """Rename or update a saved resource version."""
+        return self._versions.update(server_id, version_id, **params)
+
+    def delete_version(self, server_id: str, version_id: str) -> bool:
+        """Delete a saved resource version."""
+        return self._versions.delete(server_id, version_id)
+
+    def publish_version(self, server_id: str, version_id: str, **params: Any) -> dict[str, Any]:
+        """Publish a saved resource version."""
+        return self._versions.publish(server_id, version_id, **params)
+
+    def unpublish_version(self, server_id: str, version_id: str) -> dict[str, Any]:
+        """Unpublish a saved resource version."""
+        return self._versions.unpublish(server_id, version_id)
+
+    def restore_version(self, server_id: str, version_id: str) -> dict[str, Any]:
+        """Restore a saved version into the editable resource configuration."""
+        return self._versions.restore(server_id, version_id)
+
+    def compare_versions(self, server_id: str, *, base_version_id: str, target_version_id: str) -> dict[str, Any]:
+        """Compare two resource versions."""
+        return self._versions.compare(
+            server_id,
+            base_version_id=base_version_id,
+            target_version_id=target_version_id,
+        )
+
+    def deploy(
+        self,
+        server_id: str,
+        *,
+        version_id: str | None = None,
+        release_id: str | None = None,
+        project_delivery_promotion_id: str | None = None,
+        project_delivery_resource_candidate_id: str | None = None,
+    ) -> dict[str, Any]:
+        body = {
+            key: value
+            for key, value in {
+                "versionId": version_id,
+                "releaseId": release_id,
+                "projectDeliveryPromotionId": project_delivery_promotion_id,
+                "projectDeliveryResourceCandidateId": project_delivery_resource_candidate_id,
+            }.items()
+            if value is not None
+        }
+        return self._client.post(f"/servers/{server_id}/deploy", body)
+
+    def decommission(self, server_id: str) -> dict[str, Any]:
+        """Decommission a deployed agent-runtime resource."""
+        return self._client.post(f"/servers/{server_id}/decommission", {})
 
     def list_deployments(self, server_id: str) -> list[dict[str, Any]]:
         resp = self._client.get(f"/servers/{server_id}/deployments")
@@ -75,8 +152,14 @@ class ResourcesResource:
     def create_ai_chat_app_template(self, **params: Any) -> dict[str, Any]:
         return self._client.post("/servers/templates/ai-chat-app", params)
 
-    def get_analytics(self, server_id: str) -> dict[str, Any]:
-        return self._client.get(f"/servers/{server_id}/analytics")
+    def get_analytics(
+        self,
+        server_id: str,
+        *,
+        period: str | None = None,
+    ) -> dict[str, Any]:
+        query = {"period": period} if period is not None else None
+        return self._client.get(f"/servers/{server_id}/analytics", query=query)
 
     def get_logs(
         self,
@@ -284,3 +367,260 @@ class ResourcesResource:
     def delete_secret(self, server_id: str, secret_id: str) -> bool:
         resp = self._client.delete(f"/servers/{server_id}/secrets/{secret_id}")
         return bool(resp.get("deleted"))
+
+    def get_custom_domain(
+        self,
+        server_id: str,
+        *,
+        domain: str | None = None,
+    ) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/custom-domain",
+            query={"domain": domain},
+        )
+
+    def set_custom_domain(self, server_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(f"/servers/{_id(server_id)}/custom-domain", params)
+
+    def delete_custom_domain(
+        self,
+        server_id: str,
+        *,
+        domain: str | None = None,
+    ) -> dict[str, Any]:
+        return self._client.request(
+            "DELETE",
+            f"/servers/{_id(server_id)}/custom-domain",
+            query={"domain": domain},
+        )
+
+    def check_custom_domain(self, server_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/custom-domain/check",
+            params,
+        )
+
+    def get_overview_analytics(
+        self,
+        *,
+        kind: str | None = None,
+        period: str | None = None,
+    ) -> dict[str, Any]:
+        query: dict[str, Any] = {}
+        if kind is not None:
+            query["kind"] = kind
+        if period is not None:
+            query["period"] = period
+        return self._client.get("/servers/analytics/overview", query=query or None)
+
+    def connect_payment_account(self, server_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/payments/connect-account",
+            params,
+        )
+
+    def sync_payments(self, server_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(f"/servers/{_id(server_id)}/payments/sync", params)
+
+    def get_current_auth_user(self, server_id: str) -> dict[str, Any]:
+        return self._client.get(f"/servers/{_id(server_id)}/auth/me")
+
+    def list_runs(
+        self,
+        server_id: str,
+        *,
+        limit: int | None = None,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runs",
+            query=_query(params, limit=limit),
+        )
+
+    def start_run(self, server_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(f"/servers/{_id(server_id)}/runs", params)
+
+    def get_run(self, server_id: str, run_id: str) -> dict[str, Any]:
+        return self._client.get(f"/servers/{_id(server_id)}/runs/{_id(run_id)}")
+
+    def send_run_input(
+        self,
+        server_id: str,
+        run_id: str,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runs/{_id(run_id)}/input",
+            params,
+        )
+
+    def get_run_events(self, server_id: str, run_id: str) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runs/{_id(run_id)}/events"
+        )
+
+    def cancel_run(self, server_id: str, run_id: str) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runs/{_id(run_id)}/cancel",
+            {},
+        )
+
+    def download_runtime_sdk(self, server_id: str, target: str) -> str:
+        response = self._client.request_raw(
+            "GET",
+            f"/servers/{_id(server_id)}/runtime-sdk/{_id(target)}",
+        )
+        return response.text
+
+    def list_runtime_agent_runs(
+        self,
+        server_id: str,
+        *,
+        limit: int | None = None,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runtime/agent/runs",
+            query=_query(params, limit=limit),
+        )
+
+    def start_runtime_agent_run(self, server_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runtime/agent/runs",
+            params,
+        )
+
+    def get_runtime_agent_run(self, server_id: str, run_id: str) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runtime/agent/runs/{_id(run_id)}"
+        )
+
+    def send_runtime_agent_run_input(
+        self,
+        server_id: str,
+        run_id: str,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runtime/agent/runs/{_id(run_id)}/input",
+            params,
+        )
+
+    def get_runtime_agent_run_events(
+        self,
+        server_id: str,
+        run_id: str,
+    ) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runtime/agent/runs/{_id(run_id)}/events"
+        )
+
+    def cancel_runtime_agent_run(self, server_id: str, run_id: str) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runtime/agent/runs/{_id(run_id)}/cancel",
+            {},
+        )
+
+    def list_runtime_secrets(self, server_id: str) -> dict[str, Any]:
+        return self._client.get(f"/servers/{_id(server_id)}/runtime/secrets")
+
+    def get_runtime_secret(self, server_id: str, secret_id: str) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runtime/secrets/{_id(secret_id)}"
+        )
+
+    def get_runtime_payments(self, server_id: str) -> dict[str, Any]:
+        return self._client.get(f"/servers/{_id(server_id)}/runtime/payments")
+
+    def create_runtime_checkout_session(
+        self,
+        server_id: str,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runtime/payments/checkout-sessions",
+            params,
+        )
+
+    def commit_runtime_database(self, server_id: str, **params: Any) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runtime/database/commit",
+            params,
+        )
+
+    def list_runtime_database_collections(self, server_id: str) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runtime/database/collections"
+        )
+
+    def create_runtime_database_collection(
+        self,
+        server_id: str,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runtime/database/collections",
+            params,
+        )
+
+    def list_runtime_database_documents(
+        self,
+        server_id: str,
+        collection_id: str,
+        *,
+        limit: int | None = None,
+        page_token: str | None = None,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runtime/database/collections/"
+            f"{_id(collection_id)}/documents",
+            query=_query(params, limit=limit, pageToken=page_token),
+        )
+
+    def create_runtime_database_document(
+        self,
+        server_id: str,
+        collection_id: str,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.post(
+            f"/servers/{_id(server_id)}/runtime/database/collections/"
+            f"{_id(collection_id)}/documents",
+            params,
+        )
+
+    def get_runtime_database_document(
+        self,
+        server_id: str,
+        collection_id: str,
+        document_id: str,
+    ) -> dict[str, Any]:
+        return self._client.get(
+            f"/servers/{_id(server_id)}/runtime/database/collections/"
+            f"{_id(collection_id)}/documents/{_id(document_id)}"
+        )
+
+    def update_runtime_database_document(
+        self,
+        server_id: str,
+        collection_id: str,
+        document_id: str,
+        **params: Any,
+    ) -> dict[str, Any]:
+        return self._client.put(
+            f"/servers/{_id(server_id)}/runtime/database/collections/"
+            f"{_id(collection_id)}/documents/{_id(document_id)}",
+            params,
+        )
+
+    def delete_runtime_database_document(
+        self,
+        server_id: str,
+        collection_id: str,
+        document_id: str,
+    ) -> dict[str, Any]:
+        return self._client.delete(
+            f"/servers/{_id(server_id)}/runtime/database/collections/"
+            f"{_id(collection_id)}/documents/{_id(document_id)}"
+        )

@@ -13,7 +13,7 @@ from .._api_client import ApiClient
 from ..types import (
     AvailableRuntimes,
     BuildLogsResult,
-    BuildResult,
+    BuildTriggerResult,
     BuildStatusResult,
     ContainerStatus,
     DockerfileResult,
@@ -22,6 +22,7 @@ from ..types import (
     PackagesConfig,
     RuntimeConfig,
     StartContainerResult,
+    StopContainerResult,
     TestBuildResult,
     ValidateDockerfileResult,
     EnvironmentSnapshot,
@@ -32,6 +33,7 @@ from ..types import (
     EnvironmentChangeListResponse,
     EnvironmentChangeOperation,
 )
+from .versioning import VersioningResource
 
 
 class EnvironmentsResource:
@@ -50,6 +52,7 @@ class EnvironmentsResource:
 
     def __init__(self, client: ApiClient) -> None:
         self._client = client
+        self._versions = VersioningResource(client, "/environments")
 
     # =========================================================================
     # CRUD
@@ -72,6 +75,7 @@ class EnvironmentsResource:
         internet_access: bool | None = None,
         is_default: bool | None = None,
         compute_profile: str | None = None,
+        base_image: str | None = None,
         gui_enabled: bool | None = None,
         office_apps_enabled: bool | None = None,
         metadata: dict[str, Any] | None = None,
@@ -108,6 +112,8 @@ class EnvironmentsResource:
             body["isDefault"] = is_default
         if compute_profile is not None:
             body["computeProfile"] = compute_profile
+        if base_image is not None:
+            body["baseImage"] = base_image
         if gui_enabled is not None:
             body["guiEnabled"] = gui_enabled
         if office_apps_enabled is not None:
@@ -120,23 +126,34 @@ class EnvironmentsResource:
     def list(
         self,
         *,
+        project_id: str | None = None,
         is_active: bool | None = None,
         is_default: bool | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[Environment]:
-        """List all environments."""
-        query: dict[str, Any] = {}
+        """List environments.
+
+        ``project_id`` is filtered by the API. The historical active/default and
+        pagination options remain client-side compatibility filters because the
+        API returns the complete matching list.
+        """
+        query = {"projectId": project_id} if project_id is not None else None
+        resp = self._client.get("/environments", query=query)
+        environments: list[Environment] = resp["data"]
         if is_active is not None:
-            query["isActive"] = str(is_active).lower()
+            environments = [item for item in environments if item.get("isActive") is is_active]
         if is_default is not None:
-            query["isDefault"] = str(is_default).lower()
-        if limit is not None:
-            query["limit"] = limit
-        if offset is not None:
-            query["offset"] = offset
-        resp = self._client.get("/environments", query=query or None)
-        return resp["data"]
+            environments = [item for item in environments if item.get("isDefault") is is_default]
+        start = max(0, offset or 0)
+        if limit is None:
+            return environments[start:]
+        return environments[start : start + max(0, limit)]
+
+    def get_overview_analytics(self, *, period: str | None = None) -> dict[str, Any]:
+        """Get aggregate computer analytics for the active organization."""
+        query = {"period": period} if period is not None else None
+        return self._client.get("/environments/analytics/overview", query=query)
 
     def get(self, environment_id: str) -> Environment:
         """Get an environment by ID."""
@@ -145,7 +162,8 @@ class EnvironmentsResource:
 
     def get_default(self) -> Environment:
         """Get the user's default environment. Creates one if it doesn't exist."""
-        return self._client.get("/environments/default")
+        resp = self._client.get("/environments/default")
+        return resp["environment"]
 
     def set_default(self, environment_id: str) -> Environment:
         """Mark an environment as the default computer for the current user."""
@@ -171,9 +189,11 @@ class EnvironmentsResource:
             "secrets": "secrets",
             "setup_scripts": "setupScripts",
             "mcp_servers": "mcpServers",
+            "documentation": "documentation",
             "internet_access": "internetAccess",
             "is_default": "isDefault",
             "compute_profile": "computeProfile",
+            "base_image": "baseImage",
             "gui_enabled": "guiEnabled",
             "office_apps_enabled": "officeAppsEnabled",
             "metadata": "metadata",
@@ -184,9 +204,85 @@ class EnvironmentsResource:
         resp = self._client.patch(f"/environments/{environment_id}", body)
         return resp["environment"]
 
-    def delete(self, environment_id: str) -> None:
-        """Delete an environment (soft delete)."""
-        self._client.delete(f"/environments/{environment_id}")
+    def replace(self, environment_id: str, name: str, **params: Any) -> Environment:
+        """Replace an environment through the API's full PUT operation.
+
+        Use :meth:`update` when only a subset of fields should change.
+        Additional fields use the same snake_case names accepted by ``create``.
+        """
+        body: dict[str, Any] = {"name": name}
+        key_map = {
+            "project_id": "projectId",
+            "description": "description",
+            "runtimes": "runtimes",
+            "packages": "packages",
+            "dockerfile_extensions": "dockerfileExtensions",
+            "environment_variables": "environmentVariables",
+            "secrets": "secrets",
+            "setup_scripts": "setupScripts",
+            "mcp_servers": "mcpServers",
+            "documentation": "documentation",
+            "internet_access": "internetAccess",
+            "is_default": "isDefault",
+            "compute_profile": "computeProfile",
+            "base_image": "baseImage",
+            "gui_enabled": "guiEnabled",
+            "office_apps_enabled": "officeAppsEnabled",
+            "metadata": "metadata",
+        }
+        for py_key, api_key in key_map.items():
+            if py_key in params:
+                body[api_key] = params[py_key]
+        resp = self._client.put(f"/environments/{environment_id}", body)
+        return resp["environment"]
+
+    def delete(self, environment_id: str, *, hard: bool = False) -> None:
+        """Delete an environment, optionally removing it permanently."""
+        self._client.request(
+            "DELETE",
+            f"/environments/{environment_id}",
+            query={"hard": True} if hard else None,
+        )
+
+    def list_versions(self, environment_id: str) -> list[dict[str, Any]]:
+        """List saved computer versions."""
+        return self._versions.list(environment_id)
+
+    def get_version(self, environment_id: str, version_id: str) -> dict[str, Any]:
+        """Get one saved computer version."""
+        return self._versions.get(environment_id, version_id)
+
+    def create_version(self, environment_id: str, **params: Any) -> dict[str, Any]:
+        """Save the current computer or a supplied snapshot as a version."""
+        return self._versions.create(environment_id, **params)
+
+    def update_version(self, environment_id: str, version_id: str, **params: Any) -> dict[str, Any]:
+        """Rename or update a saved computer version."""
+        return self._versions.update(environment_id, version_id, **params)
+
+    def delete_version(self, environment_id: str, version_id: str) -> bool:
+        """Delete a saved computer version."""
+        return self._versions.delete(environment_id, version_id)
+
+    def publish_version(self, environment_id: str, version_id: str, **params: Any) -> dict[str, Any]:
+        """Publish a saved computer version."""
+        return self._versions.publish(environment_id, version_id, **params)
+
+    def unpublish_version(self, environment_id: str, version_id: str) -> dict[str, Any]:
+        """Unpublish a saved computer version."""
+        return self._versions.unpublish(environment_id, version_id)
+
+    def restore_version(self, environment_id: str, version_id: str) -> dict[str, Any]:
+        """Restore a saved version into the editable computer configuration."""
+        return self._versions.restore(environment_id, version_id)
+
+    def compare_versions(self, environment_id: str, *, base_version_id: str, target_version_id: str) -> dict[str, Any]:
+        """Compare two computer versions."""
+        return self._versions.compare(
+            environment_id,
+            base_version_id=base_version_id,
+            target_version_id=target_version_id,
+        )
 
     # =========================================================================
     # Runtime Management
@@ -272,12 +368,19 @@ class EnvironmentsResource:
         return self._client.get(f"/environments/{environment_id}/dockerfile")
 
     def set_dockerfile_extensions(
-        self, environment_id: str, dockerfile_extensions: str
+        self,
+        environment_id: str,
+        dockerfile_extensions: str,
+        *,
+        base_image: str | None = None,
     ) -> Environment:
         """Update Dockerfile extensions. Triggers a rebuild."""
+        body: dict[str, Any] = {"dockerfileExtensions": dockerfile_extensions}
+        if base_image is not None:
+            body["baseImage"] = base_image
         resp = self._client.put(
             f"/environments/{environment_id}/dockerfile",
-            {"dockerfileExtensions": dockerfile_extensions},
+            body,
         )
         return resp["environment"]
 
@@ -294,14 +397,9 @@ class EnvironmentsResource:
     # Build Management
     # =========================================================================
 
-    def trigger_build(
-        self, environment_id: str, *, force: bool = False
-    ) -> dict[str, Any]:
+    def trigger_build(self, environment_id: str) -> BuildTriggerResult:
         """Trigger a build of the environment image."""
-        path = f"/environments/{environment_id}/build"
-        if force:
-            path += "?force=true"
-        return self._client.post(path, {})
+        return self._client.post(f"/environments/{environment_id}/build", {})
 
     def get_build_status(self, environment_id: str) -> BuildStatusResult:
         """Get build status."""
@@ -323,34 +421,26 @@ class EnvironmentsResource:
         self,
         environment_id: str,
         *,
-        workspace_id: str | None = None,
-        cpus: int | None = None,
-        memory: str | None = None,
+        agent_id: str | None = None,
+        enabled_skills: dict[str, Any] | None = None,
+        custom_skills: list[dict[str, Any]] | None = None,
     ) -> StartContainerResult:
         """Start the environment's container."""
         body: dict[str, Any] = {}
-        if workspace_id is not None:
-            body["workspaceId"] = workspace_id
-        if cpus is not None:
-            body["cpus"] = cpus
-        if memory is not None:
-            body["memory"] = memory
+        if agent_id is not None:
+            body["agentId"] = agent_id
+        if enabled_skills is not None:
+            body["enabledSkills"] = enabled_skills
+        if custom_skills is not None:
+            body["customSkills"] = custom_skills
         return self._client.post(f"/environments/{environment_id}/start", body)
 
     def stop(
         self,
         environment_id: str,
-        *,
-        container_id: str | None = None,
-        all: bool | None = None,
-    ) -> dict[str, Any]:
+    ) -> StopContainerResult:
         """Stop the environment's container(s)."""
-        body: dict[str, Any] = {}
-        if container_id is not None:
-            body["containerId"] = container_id
-        if all is not None:
-            body["all"] = all
-        return self._client.post(f"/environments/{environment_id}/stop", body)
+        return self._client.post(f"/environments/{environment_id}/stop", {})
 
     def get_status(self, environment_id: str) -> ContainerStatus:
         """Get container status."""
@@ -391,9 +481,23 @@ class EnvironmentsResource:
         """Initialize checkpoint history for a computer."""
         return self._client.post(f"/environments/{environment_id}/snapshots/initialize", {})
 
-    def list_snapshots(self, environment_id: str) -> list[EnvironmentSnapshot]:
+    def list_snapshots(
+        self,
+        environment_id: str,
+        *,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> list[EnvironmentSnapshot]:
         """List computer checkpoints/snapshots."""
-        resp = self._client.get(f"/environments/{environment_id}/snapshots")
+        query: dict[str, Any] = {}
+        if limit is not None:
+            query["limit"] = limit
+        if offset is not None:
+            query["offset"] = offset
+        resp = self._client.get(
+            f"/environments/{environment_id}/snapshots",
+            query=query or None,
+        )
         return resp["data"]
 
     def list_changes(
@@ -453,6 +557,15 @@ class EnvironmentsResource:
             query={"path": path},
         )
 
+    def get_snapshot_file_raw(self, environment_id: str, snapshot_id: str, *, path: str) -> bytes:
+        """Read a snapshot file without JSON decoding."""
+        response = self._client.request_raw(
+            "GET",
+            f"/environments/{environment_id}/snapshots/{snapshot_id}/file",
+            query={"path": path, "format": "raw"},
+        )
+        return response.content
+
     def get_change_diff(
         self,
         environment_id: str,
@@ -471,6 +584,15 @@ class EnvironmentsResource:
             f"/environments/{environment_id}/changes/{quote(change_id, safe='')}/file",
             query={"path": path},
         )
+
+    def get_change_file_raw(self, environment_id: str, change_id: str, *, path: str) -> bytes:
+        """Read a historical file without JSON decoding."""
+        response = self._client.request_raw(
+            "GET",
+            f"/environments/{environment_id}/changes/{quote(change_id, safe='')}/file",
+            query={"path": path, "format": "raw"},
+        )
+        return response.content
 
     def fork_from_snapshot(
         self,
@@ -507,16 +629,3 @@ class EnvironmentsResource:
             f"/environments/{environment_id}/changes/{quote(change_id, safe='')}/fork",
             body,
         )
-
-    # =========================================================================
-    # Configuration Management
-    # =========================================================================
-
-    def get_config(self, environment_id: str) -> str:
-        """Get the agent configuration for an environment."""
-        resp = self._client.get(f"/environments/{environment_id}/config")
-        return resp["config"]
-
-    def update_config(self, environment_id: str, config: str) -> None:
-        """Update the agent configuration."""
-        self._client.put(f"/environments/{environment_id}/config", {"config": config})

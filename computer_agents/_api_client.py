@@ -7,7 +7,9 @@ and error handling. Higher-level resource managers use this client.
 from __future__ import annotations
 
 import json
+import os
 from typing import Any, Generator, Iterator
+from urllib.parse import SplitResult, urlsplit, urlunsplit
 
 import httpx
 
@@ -16,6 +18,58 @@ from ._exceptions import ApiClientError
 
 DEFAULT_BASE_URL = "https://api.computer-agents.com"
 DEFAULT_TIMEOUT = 60.0  # seconds
+API_VERSION_PATH = "/v1"
+
+
+def _normalize_configured_base_url(base_url: str) -> str:
+    """Validate and normalize a cloud or appliance deployment URL."""
+    base_url = base_url.strip()
+    try:
+        parsed = urlsplit(base_url)
+        # Accessing hostname and port validates malformed authorities and IPv6 hosts.
+        hostname = parsed.hostname
+        _ = parsed.port
+    except ValueError as exc:
+        raise ValueError("The Computer Agents base URL must be a valid absolute URL.") from exc
+
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not hostname
+        or any(character.isspace() for character in hostname)
+    ):
+        raise ValueError("The Computer Agents base URL must be an absolute http or https URL.")
+    if parsed.username or parsed.password:
+        raise ValueError("The Computer Agents base URL cannot contain credentials.")
+    if parsed.query or parsed.fragment:
+        raise ValueError("The Computer Agents base URL cannot contain a query or fragment.")
+
+    normalized = SplitResult(
+        scheme=parsed.scheme,
+        netloc=parsed.netloc,
+        path=parsed.path.rstrip("/"),
+        query="",
+        fragment="",
+    )
+    return urlunsplit(normalized).rstrip("/")
+
+
+def _resolve_api_base_url(base_url: str) -> str:
+    parsed = urlsplit(base_url)
+    path = parsed.path.rstrip("/")
+    api_path = path if path.endswith(API_VERSION_PATH) else f"{path}{API_VERSION_PATH}"
+    return urlunsplit(parsed._replace(path=api_path)).rstrip("/")
+
+
+def _resolve_request_path(path: str) -> str:
+    parsed = urlsplit(path)
+    if parsed.scheme in {"http", "https"}:
+        return path
+    normalized = path if path.startswith("/") else f"/{path}"
+    if normalized == API_VERSION_PATH:
+        return "/"
+    if normalized.startswith(f"{API_VERSION_PATH}/"):
+        return normalized[len(API_VERSION_PATH) :]
+    return normalized
 
 
 class ApiClient:
@@ -34,6 +88,7 @@ class ApiClient:
         base_url: str | None = None,
         timeout: float | None = None,
         debug: bool = False,
+        organization_id: str | None = None,
     ) -> None:
         if not api_key:
             raise ValueError(
@@ -43,21 +98,38 @@ class ApiClient:
             )
 
         self._api_key = api_key
-        self._base_url = (base_url or DEFAULT_BASE_URL).rstrip("/")
+        configured_base_url = (
+            base_url
+            or os.environ.get("COMPUTER_AGENTS_BASE_URL")
+            or os.environ.get("COMPUTER_AGENTS_API_URL")
+            or DEFAULT_BASE_URL
+        )
+        self._base_url = _normalize_configured_base_url(configured_base_url)
+        self._api_base_url = _resolve_api_base_url(self._base_url)
         self._timeout = timeout or DEFAULT_TIMEOUT
         self._debug = debug
+        self._organization_id = organization_id.strip() if organization_id else None
+
+        default_headers = {
+            "Authorization": f"Bearer {self._api_key}",
+        }
+        if self._organization_id:
+            default_headers["X-Computer-Agents-Organization"] = self._organization_id
 
         self._client = httpx.Client(
-            base_url=self._base_url,
+            base_url=self._api_base_url,
             timeout=httpx.Timeout(self._timeout, connect=10.0),
-            headers={
-                "Authorization": f"Bearer {self._api_key}",
-            },
+            headers=default_headers,
         )
 
     def close(self) -> None:
         """Close the underlying HTTP client."""
         self._client.close()
+
+    @property
+    def organization_id(self) -> str | None:
+        """Active organization sent with tenant-scoped requests."""
+        return self._organization_id
 
     def __enter__(self) -> "ApiClient":
         return self
@@ -91,13 +163,20 @@ class ApiClient:
         if body is not None and "Content-Type" not in request_headers:
             request_headers["Content-Type"] = "application/json"
 
+        request_path = _resolve_request_path(path)
+
         if self._debug:
-            print(f"[ApiClient] {method} {self._base_url}{path}")
+            request_url = (
+                request_path
+                if request_path.startswith(("http://", "https://"))
+                else f"{self._api_base_url}{request_path}"
+            )
+            print(f"[ApiClient] {method} {request_url}")
 
         try:
             response = self._client.request(
                 method,
-                path,
+                request_path,
                 json=body if body is not None else None,
                 params=params,
                 headers=request_headers,
@@ -127,23 +206,28 @@ class ApiClient:
         path: str,
         *,
         body: Any | None = None,
+        query: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> Iterator[dict[str, Any]]:
         """Make a streaming SSE request and yield parsed events."""
-        headers = {
+        request_headers = {
             "Accept": "text/event-stream",
+            **(headers or {}),
         }
         if body is not None:
-            headers["Content-Type"] = "application/json"
+            request_headers.setdefault("Content-Type", "application/json")
 
         content = json.dumps(body).encode() if body is not None else None
+        request_path = _resolve_request_path(path)
 
         try:
             with self._client.stream(
                 method,
-                path,
+                request_path,
                 content=content,
-                headers=headers,
+                params={key: value for key, value in (query or {}).items() if value is not None},
+                headers=request_headers,
                 timeout=timeout or 600.0,  # 10 minutes for streaming
             ) as response:
                 if not response.is_success:
@@ -164,13 +248,18 @@ class ApiClient:
         method: str,
         path: str,
         *,
+        query: dict[str, Any] | None = None,
+        headers: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> httpx.Response:
         """Make a raw HTTP request and return the response object."""
+        request_path = _resolve_request_path(path)
         try:
             response = self._client.request(
                 method,
-                path,
+                request_path,
+                params={key: value for key, value in (query or {}).items() if value is not None},
+                headers=headers,
                 timeout=timeout or self._timeout,
             )
         except httpx.TimeoutException:
@@ -195,10 +284,11 @@ class ApiClient:
         timeout: float | None = None,
     ) -> Any:
         """Make a multipart form request."""
+        request_path = _resolve_request_path(path)
         try:
             response = self._client.request(
                 method,
-                path,
+                request_path,
                 data=data,
                 files=files,
                 timeout=timeout or self._timeout,
@@ -247,8 +337,8 @@ class ApiClient:
     ) -> Any:
         return self.request("PUT", path, body=body)
 
-    def delete(self, path: str) -> Any:
-        return self.request("DELETE", path)
+    def delete(self, path: str, body: Any | None = None) -> Any:
+        return self.request("DELETE", path, body=body)
 
     # =========================================================================
     # Accessors
@@ -259,8 +349,21 @@ class ApiClient:
         return self._base_url
 
     @property
+    def api_base_url(self) -> str:
+        """Return the canonical versioned URL used for API requests."""
+        return self._api_base_url
+
+    @property
     def api_key(self) -> str:
         return self._api_key
+
+    @property
+    def timeout(self) -> float:
+        return self._timeout
+
+    @property
+    def debug(self) -> bool:
+        return self._debug
 
     # =========================================================================
     # Internal helpers

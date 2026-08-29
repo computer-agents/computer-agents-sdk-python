@@ -9,7 +9,7 @@ from __future__ import annotations
 from typing import Any
 
 from .._api_client import ApiClient
-from ..types import Schedule
+from ..types import Schedule, ScheduleTriggerResult
 
 
 class SchedulesResource:
@@ -43,6 +43,7 @@ class SchedulesResource:
         workspace_name: str | None = None,
         context_id: str | None = None,
         context_name: str | None = None,
+        app_id: str | None = None,
         environment_id: str | None = None,
         environment_name: str | None = None,
         cron_expression: str | None = None,
@@ -65,6 +66,7 @@ class SchedulesResource:
             "workspaceName": workspace_name,
             "contextId": context_id,
             "contextName": context_name,
+            "appId": app_id,
             "environmentId": environment_id,
             "environmentName": environment_name,
             "cronExpression": cron_expression,
@@ -82,12 +84,24 @@ class SchedulesResource:
     def list(
         self,
         *,
+        agent_id: str | None = None,
+        environment_id: str | None = None,
+        schedule_type: str | None = None,
+        app_id: str | None = None,
         enabled: bool | None = None,
         limit: int | None = None,
         offset: int | None = None,
     ) -> list[Schedule]:
         """List all schedules."""
         query: dict[str, Any] = {}
+        if agent_id is not None:
+            query["agentId"] = agent_id
+        if environment_id is not None:
+            query["environmentId"] = environment_id
+        if schedule_type is not None:
+            query["scheduleType"] = schedule_type
+        if app_id is not None:
+            query["appId"] = app_id
         if enabled is not None:
             query["enabled"] = enabled
         if limit is not None:
@@ -96,6 +110,34 @@ class SchedulesResource:
             query["offset"] = offset
         resp = self._client.get("/schedules", query=query or None)
         return resp["data"]
+
+    def list_executions(
+        self,
+        *,
+        schedule_id: str | None = None,
+        app_id: str | None = None,
+        context_id: str | None = None,
+        range_start: str | None = None,
+        range_end: str | None = None,
+        limit: int | None = None,
+        offset: int | None = None,
+    ) -> dict[str, Any]:
+        """List durable execution lifecycle records for accessible schedules."""
+        query = {
+            key: value
+            for key, value in {
+                "scheduleId": schedule_id,
+                "appId": app_id,
+                "contextId": context_id,
+                "rangeStart": range_start,
+                "rangeEnd": range_end,
+                "limit": limit,
+                "offset": offset,
+            }.items()
+            if value is not None
+        }
+        resp = self._client.get("/schedules/executions", query=query or None)
+        return {"data": resp["data"], "hasMore": resp.get("has_more", False)}
 
     def get(self, schedule_id: str) -> Schedule:
         """Get a schedule by ID."""
@@ -109,6 +151,11 @@ class SchedulesResource:
             "name": "name",
             "description": "description",
             "task": "task",
+            "context_id": "contextId",
+            "context_name": "contextName",
+            "environment_id": "environmentId",
+            "environment_name": "environmentName",
+            "app_id": "appId",
             "cron_expression": "cronExpression",
             "scheduled_time": "scheduledTime",
             "timezone": "timezone",
@@ -129,7 +176,7 @@ class SchedulesResource:
     # Schedule Control
     # =========================================================================
 
-    def trigger(self, schedule_id: str) -> dict[str, Any]:
+    def trigger(self, schedule_id: str) -> ScheduleTriggerResult:
         """Manually trigger a schedule."""
         return self._client.post(f"/schedules/{schedule_id}/trigger")
 

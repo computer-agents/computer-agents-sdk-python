@@ -7,22 +7,23 @@ client = ComputerAgentsClient()
 env_id = "env_xxx"
 
 # Check for uncommitted changes
-diff = client.git.diff(env_id)
-print(f"Files changed: {diff.get('stats', {}).get('filesChanged', 0)}")
-for d in diff.get("diffs", []):
-    print(f"  {d['path']}: +{d.get('additions', 0)} -{d.get('deletions', 0)}")
+status = client.git.get_status(env_id)
+changed_files = status.get("changedFiles", [])
+print(f"Files changed: {len(changed_files)}")
+for file in changed_files:
+    print(f"  {file.get('status', '')} {file.get('path', '')}")
 
 # Commit changes
-if diff.get("diffs"):
+if changed_files:
+    client.git.stage(env_id, all=True)
     result = client.git.commit(
         env_id,
         message="Update from Computer Agents",
-        author={"name": "Computer Agent", "email": "agent@computer-agents.com"},
     )
-    print(f"Committed: {result['commit']['sha']}")
+    print(f"Committed: {result['sha']}")
 
     # Push to remote
     push = client.git.push(env_id)
-    print(f"Pushed {push['push']['commits']} commits to {push['push']['branch']}")
+    print(f"Pushed to {push['branch']}")
 
 client.close()

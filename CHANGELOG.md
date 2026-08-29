@@ -5,6 +5,23 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2.6.4] - 2026-08-29
+
+### Added
+
+- Added complete tenant-facing API coverage across 43 capability groups,
+  including Tests, assurance, optimization, Metronomes, organization controls,
+  local computers, and deployable resources.
+- Added request-contract parity checks for query parameters, JSON bodies,
+  idempotency headers, multipart uploads, and raw or streaming responses.
+
+### Changed
+
+- Aligned request models, response types, resource exports, aliases, and
+  examples with the current versioned HTTP API.
+- Updated automation and model-selection documentation to use current request
+  shapes and the workspace model catalog.
+
 ## [2.6.3] - 2026-05-19
 
 ### Changed

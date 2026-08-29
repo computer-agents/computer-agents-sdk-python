@@ -32,8 +32,14 @@ class DatabasesResource:
         resp = self._client.delete(f"/databases/{database_id}")
         return bool(resp.get("success") or resp.get("deleted"))
 
-    def get_analytics(self, database_id: str) -> dict[str, Any]:
-        return self._client.get(f"/databases/{database_id}/analytics")
+    def get_analytics(self, database_id: str, *, period: str | None = None) -> dict[str, Any]:
+        query = {"period": period} if period is not None else None
+        return self._client.get(f"/databases/{database_id}/analytics", query=query)
+
+    def get_overview_analytics(self, *, period: str | None = None) -> dict[str, Any]:
+        """Get aggregate managed-database analytics for the active organization."""
+        query = {"period": period} if period is not None else None
+        return self._client.get("/databases/analytics/overview", query=query)
 
     def list_collections(self, database_id: str) -> list[dict[str, Any]]:
         resp = self._client.get(f"/databases/{database_id}/collections")
